@@ -1,0 +1,38 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model CarListing {
+  id           String   @id @default(cuid())
+  source       String   // 'autoscout' | 'subito'
+  title        String
+  price        Int?
+  mileage      Int?
+  year         Int?
+  fuel         String?
+  transmission String?
+  city         String?
+  imageUrl     String?
+  originalUrl  String
+  searchId     String?
+  createdAt    DateTime @default(now())
+
+  search SearchQuery? @relation(fields: [searchId], references: [id])
+
+  @@index([searchId])
+}
+
+model SearchQuery {
+  id        String       @id @default(cuid())
+  make      String
+  model     String
+  location  String?
+  radius    Int?
+  createdAt DateTime     @default(now())
+  listings  CarListing[]
+}

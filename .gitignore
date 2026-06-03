@@ -1,0 +1,38 @@
+# Dependencies
+**/node_modules/
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Build outputs
+frontend/.next/
+frontend/out/
+frontend/build/
+backend/dist/
+**/coverage/
+
+# Environment files
+**/.env*
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# TypeScript
+**/*.tsbuildinfo
+
+# Tooling and deployment
+frontend/.vercel/
+
+# OS/editor noise
+.DS_Store
+*.pem
+
+# Generated Next.js file
+frontend/next-env.d.ts
