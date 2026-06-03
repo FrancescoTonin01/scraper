@@ -1,0 +1,387 @@
+"use client";
+
+import { useSearchParams, useRouter } from "next/navigation";
+import { useEffect, useState, Suspense } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+
+const LOADING_MESSAGES = [
+  "Stiamo cercando le migliori auto per te…",
+  "Analisi degli annunci su AutoScout24…",
+  "Scansione di Subito.it in corso…",
+  "Confronto prezzi e offerte…",
+  "Quasi fatto, un attimo di pazienza…",
+  "Raccolta delle foto e dei dettagli…",
+  "Ordinamento dei risultati migliori…",
+];
+import SearchForm from "@/components/SearchForm";
+import CarCard from "@/components/CarCard";
+import CarCardSkeleton from "@/components/CarCardSkeleton";
+import Pagination from "@/components/Pagination";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+
+const SORT_OPTIONS = [
+  { value: "price_asc", label: "Prezzo crescente" },
+  { value: "price_desc", label: "Prezzo decrescente" },
+  { value: "year_desc", label: "Anno: più recenti" },
+  { value: "year_asc", label: "Anno: meno recenti" },
+  { value: "km_asc", label: "Km: meno km" },
+  { value: "km_desc", label: "Km: più km" },
+] as const;
+
+type CarListing = {
+  source: "autoscout" | "subito";
+  title: string;
+  price: number | null;
+  mileage?: number | null;
+  year?: number | null;
+  fuel?: string | null;
+  transmission?: string | null;
+  city?: string | null;
+  imageUrl?: string | null;
+  originalUrl: string;
+};
+
+type SearchResponse = {
+  results: CarListing[];
+  total: number;
+  page: number;
+  totalPages: number;
+  warnings?: string[];
+};
+
+function ResultsContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  const make = searchParams.get("make") ?? "";
+  const model = searchParams.get("model") ?? "";
+  const location = searchParams.get("location") ?? "";
+  const radius = searchParams.get("radius") ?? "100";
+  const page = parseInt(searchParams.get("page") ?? "1", 10);
+  const sort = searchParams.get("sort") ?? "price_asc";
+
+  const [data, setData] = useState<SearchResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showSearch, setShowSearch] = useState(false);
+  const [msgIndex, setMsgIndex] = useState(0);
+
+  // Rotate loading messages every 3s
+  useEffect(() => {
+    if (!loading) return;
+    setMsgIndex(0);
+    const interval = setInterval(() => {
+      setMsgIndex((prev) => (prev + 1) % LOADING_MESSAGES.length);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [loading]);
+
+  useEffect(() => {
+    if (!make || !model) return;
+
+    setLoading(true);
+    setError(null);
+    setData(null);
+
+    const params = new URLSearchParams({
+      make,
+      model,
+      radius,
+      page: String(page),
+      sort,
+    });
+    if (location) params.set("location", location);
+
+    const controller = new AbortController();
+
+    fetch(`${API_BASE}/api/search?${params.toString()}`, {
+      signal: controller.signal,
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || `Errore ${res.status}`);
+        }
+        return res.json();
+      })
+      .then((json: SearchResponse) => {
+        setData(json);
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (err.name === "AbortError") return;
+        setError(err.message || "Errore durante la ricerca");
+        setLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [make, model, location, radius, page, sort]);
+
+  function updateParams(overrides: Record<string, string>) {
+    const params = new URLSearchParams({ make, model, radius, page: "1", sort });
+    if (location) params.set("location", location);
+    for (const [k, v] of Object.entries(overrides)) params.set(k, v);
+    router.push(`/results?${params.toString()}`);
+  }
+
+  function handlePageChange(newPage: number) {
+    updateParams({ page: String(newPage) });
+  }
+
+  function handleSortChange(newSort: string) {
+    updateParams({ sort: newSort, page: "1" });
+  }
+
+  return (
+    <main className="flex-1 bg-slate-50 min-h-screen">
+      {/* Header */}
+      <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-lg border-b border-slate-200/60">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="flex items-center justify-between h-14">
+            <a href="/" className="flex items-center gap-2 font-bold text-lg text-slate-900 hover:text-blue-600 transition-colors">
+              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 17h.01M12 17h.01M16 17h.01M3 9l2.5-4h13L21 9M3 9v8a2 2 0 002 2h14a2 2 0 002-2V9M3 9h18" />
+              </svg>
+              AutoAggregator
+            </a>
+            <button
+              onClick={() => setShowSearch(!showSearch)}
+              className="flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-blue-600 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-all cursor-pointer"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              Modifica ricerca
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Collapsible search */}
+      <AnimatePresence>
+        {showSearch && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="overflow-hidden bg-white border-b border-slate-200/60"
+          >
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5">
+              <SearchForm initialValues={{ make, model, location, radius }} />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+        {/* Warnings */}
+        {data?.warnings && data.warnings.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl"
+          >
+            {data.warnings.map((w, i) => (
+              <p key={i} className="text-sm text-amber-700 flex items-center gap-2">
+                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                {w}
+              </p>
+            ))}
+          </motion.div>
+        )}
+
+        {/* Error state */}
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="text-center py-20"
+          >
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-red-50 flex items-center justify-center">
+              <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold text-slate-900 mb-1">
+              Errore nella ricerca
+            </h2>
+            <p className="text-slate-500">{error}</p>
+          </motion.div>
+        )}
+
+        {/* Loading state */}
+        {loading && (
+          <div>
+            <div className="flex flex-col items-center justify-center gap-4 mb-8 py-6">
+              {/* Spinner */}
+              <div className="relative w-10 h-10">
+                <div className="absolute inset-0 rounded-full border-[3px] border-blue-100" />
+                <div className="absolute inset-0 rounded-full border-[3px] border-blue-600 border-t-transparent animate-spin" />
+              </div>
+
+              {/* Rotating messages */}
+              <div className="h-6 relative overflow-hidden w-full max-w-sm">
+                <AnimatePresence mode="wait">
+                  <motion.p
+                    key={msgIndex}
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -16 }}
+                    transition={{ duration: 0.3, ease: "easeInOut" }}
+                    className="text-sm text-slate-500 text-center absolute inset-x-0"
+                  >
+                    {LOADING_MESSAGES[msgIndex]}
+                  </motion.p>
+                </AnimatePresence>
+              </div>
+
+              {/* Progress dots */}
+              <div className="flex gap-1.5">
+                {LOADING_MESSAGES.map((_, i) => (
+                  <div
+                    key={i}
+                    className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
+                      i === msgIndex
+                        ? "bg-blue-500 scale-125"
+                        : i < msgIndex
+                          ? "bg-blue-300"
+                          : "bg-slate-200"
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {Array.from({ length: 12 }).map((_, i) => (
+                <div key={i} style={{ animationDelay: `${i * 75}ms` }} className="animate-pulse">
+                  <CarCardSkeleton />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* No results */}
+        {!loading && !error && data && data.results.length === 0 && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="text-center py-20"
+          >
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-100 flex items-center justify-center">
+              <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold text-slate-900 mb-1">
+              Nessun risultato
+            </h2>
+            <p className="text-slate-500">
+              Nessun annuncio trovato per {make} {model}
+              {location ? ` vicino a ${location}` : ""}.
+            </p>
+            <p className="text-slate-400 text-sm mt-2">
+              Prova a cambiare marca, modello o ad ampliare il raggio di ricerca.
+            </p>
+          </motion.div>
+        )}
+
+        {/* Results */}
+        {!loading && !error && data && data.results.length > 0 && (
+          <>
+            {/* Results header + sort */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+              <div>
+                <h1 className="text-lg font-semibold text-slate-900">
+                  <span className="text-blue-600">{data.total}</span>{" "}
+                  risultati per{" "}
+                  <span>{make} {model}</span>
+                </h1>
+                {location && (
+                  <p className="text-sm text-slate-500 mt-0.5">
+                    vicino a {location} · raggio {radius} km
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-400 hidden sm:inline">
+                  Pagina {data.page} di {data.totalPages}
+                </span>
+                <div className="relative">
+                  <select
+                    value={sort}
+                    onChange={(e) => handleSortChange(e.target.value)}
+                    className="appearance-none bg-white border border-slate-200 rounded-xl pl-3 pr-8 py-2 text-sm text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer hover:border-slate-300 transition-colors"
+                  >
+                    {SORT_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5">
+                    <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Card grid with staggered animation */}
+            <motion.div
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
+              initial="hidden"
+              animate="show"
+              variants={{
+                hidden: {},
+                show: { transition: { staggerChildren: 0.04 } },
+              }}
+            >
+              {data.results.map((listing, i) => (
+                <motion.div
+                  key={`${listing.source}-${listing.originalUrl}-${i}`}
+                  variants={{
+                    hidden: { opacity: 0, y: 12 },
+                    show: { opacity: 1, y: 0 },
+                  }}
+                  transition={{ duration: 0.3, ease: "easeOut" }}
+                >
+                  <CarCard listing={listing} />
+                </motion.div>
+              ))}
+            </motion.div>
+
+            <Pagination
+              page={data.page}
+              totalPages={data.totalPages}
+              onPageChange={handlePageChange}
+            />
+          </>
+        )}
+      </div>
+    </main>
+  );
+}
+
+export default function ResultsPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex-1 flex items-center justify-center min-h-screen">
+          <div className="relative w-8 h-8">
+            <div className="absolute inset-0 rounded-full border-2 border-blue-200" />
+            <div className="absolute inset-0 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" />
+          </div>
+        </main>
+      }
+    >
+      <ResultsContent />
+    </Suspense>
+  );
+}
