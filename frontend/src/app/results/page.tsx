@@ -18,6 +18,7 @@ import SearchForm from "@/components/SearchForm";
 import CarCard from "@/components/CarCard";
 import CarCardSkeleton from "@/components/CarCardSkeleton";
 import Pagination from "@/components/Pagination";
+import AlertBanner from "@/components/AlertBanner";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -126,6 +127,13 @@ function ResultsView({
       .then((json: SearchResponse) => {
         setData(json);
         setLoading(false);
+        if (typeof window !== "undefined" && window.umami) {
+          window.umami.track("search-completed", {
+            make,
+            model,
+            total: json.total,
+          });
+        }
       })
       .catch((err) => {
         if (err.name === "AbortError") return;
@@ -330,6 +338,17 @@ function ResultsView({
         {/* Results */}
         {!loading && !error && data && data.results.length > 0 && (
           <>
+            <AlertBanner
+              make={make}
+              model={model}
+              location={location || undefined}
+              radius={radius ? Number(radius) : undefined}
+              yearFrom={yearFrom ? Number(yearFrom) : undefined}
+              yearTo={yearTo ? Number(yearTo) : undefined}
+              kmMax={kmMax ? Number(kmMax) : undefined}
+              fuel={fuel || undefined}
+            />
+
             {/* Results header + sort */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
               <div>

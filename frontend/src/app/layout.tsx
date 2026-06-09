@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, DM_Sans } from "next/font/google";
+import Script from "next/script";
+import FeedbackWidget from "@/components/FeedbackWidget";
 import "./globals.css";
 
 const inter = Inter({
@@ -18,6 +20,9 @@ export const metadata: Metadata = {
   description: "Trova la tua auto ideale confrontando annunci da AutoScout24 e Subito.it in un solo posto.",
 };
 
+const umamiUrl = process.env.NEXT_PUBLIC_UMAMI_URL;
+const umamiWebsiteId = process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -25,8 +30,18 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="it" className={`${inter.variable} ${dmSans.variable} h-full antialiased`}>
+      <head>
+        {umamiUrl && umamiWebsiteId && (
+          <Script
+            src={`${umamiUrl}/script.js`}
+            data-website-id={umamiWebsiteId}
+            strategy="afterInteractive"
+          />
+        )}
+      </head>
       <body className="min-h-full flex flex-col bg-slate-50 text-slate-900 font-sans">
         {children}
+        <FeedbackWidget />
       </body>
     </html>
   );

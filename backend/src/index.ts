@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { z } from 'zod';
+import { PrismaClient } from '@prisma/client';
 import { scrapeAutoScout } from './scrapers/autoscout.js';
 import { scrapeSubito } from './scrapers/subito.js';
 import { geocodeCity } from './utils/geocode.js';
@@ -8,6 +9,7 @@ import { isValidMake, isValidModelForMake } from './data/makes.js';
 import { isValidLocation, isCityInRegion } from './data/locations.js';
 import type { CarListing, SearchResponse } from './types.js';
 
+const prisma = new PrismaClient();
 const app = express();
 const PORT = process.env.PORT ?? 4000;
 
@@ -210,6 +212,73 @@ app.get('/api/search', async (req, res) => {
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// --------------- Alert subscription ---------------
+const alertSchema = z.object({
+  email: z.string().email('Email non valida'),
+  make: z.string().min(1),
+  model: z.string().min(1),
+  location: z.string().optional(),
+  radius: z.number().min(1).max(500).optional(),
+  yearFrom: z.number().min(1900).max(2030).optional(),
+  yearTo: z.number().min(1900).max(2030).optional(),
+  kmMax: z.number().min(0).optional(),
+  fuel: z.string().optional(),
+});
+
+app.post('/api/alerts', async (req, res) => {
+  const parsed = alertSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'Dati non validi',
+      details: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  const data = parsed.data;
+
+  const existing = await prisma.alertSubscription.findFirst({
+    where: {
+      email: data.email,
+      make: data.make,
+      model: data.model,
+      location: data.location ?? null,
+      active: true,
+    },
+  });
+
+  if (existing) {
+    res.json({ message: 'Sei già iscritto a questo alert.' });
+    return;
+  }
+
+  await prisma.alertSubscription.create({ data });
+  console.log(`[alert] New subscription: ${data.email} → ${data.make} ${data.model}`);
+  res.status(201).json({ message: 'Alert attivato! Ti avviseremo quando ci saranno nuovi annunci.' });
+});
+
+// --------------- Feedback ---------------
+const feedbackSchema = z.object({
+  rating: z.number().int().min(1).max(5),
+  message: z.string().max(2000).optional(),
+  page: z.string().max(500).optional(),
+});
+
+app.post('/api/feedback', async (req, res) => {
+  const parsed = feedbackSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'Dati non validi',
+      details: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  await prisma.feedback.create({ data: parsed.data });
+  console.log(`[feedback] rating=${parsed.data.rating} page=${parsed.data.page ?? '/'}`);
+  res.status(201).json({ message: 'Grazie per il tuo feedback!' });
 });
 
 app.listen(PORT, () => {

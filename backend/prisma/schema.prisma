@@ -36,3 +36,29 @@ model SearchQuery {
   createdAt DateTime     @default(now())
   listings  CarListing[]
 }
+
+model AlertSubscription {
+  id        String   @id @default(cuid())
+  email     String
+  make      String
+  model     String
+  location  String?
+  radius    Int?
+  yearFrom  Int?
+  yearTo    Int?
+  kmMax     Int?
+  fuel      String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([active])
+}
+
+model Feedback {
+  id        String   @id @default(cuid())
+  rating    Int
+  message   String?
+  page      String?
+  createdAt DateTime @default(now())
+}

@@ -30,11 +30,22 @@ function formatMileage(km: number | null | undefined): string | null {
 export default function CarCard({ listing }: { listing: CarListing }) {
   const accentClass = listing.source === "autoscout" ? "card-accent-autoscout" : "card-accent-subito";
 
+  function handleClick() {
+    if (typeof window !== "undefined" && window.umami) {
+      window.umami.track("listing-click", {
+        source: listing.source,
+        title: listing.title,
+        price: listing.price ?? 0,
+      });
+    }
+  }
+
   return (
     <a
       href={listing.originalUrl}
       target="_blank"
       rel="noopener noreferrer"
+      onClick={handleClick}
       className={`group flex flex-col h-full bg-white rounded-2xl shadow-sm shadow-slate-200/60 border border-slate-100 overflow-hidden transition-all duration-300 hover:shadow-lg hover:shadow-slate-200/80 hover:-translate-y-1 hover:border-slate-200 ${accentClass}`}
     >
       {/* Image */}

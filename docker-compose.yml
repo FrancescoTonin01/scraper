@@ -20,6 +20,8 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+        NEXT_PUBLIC_UMAMI_URL: ${NEXT_PUBLIC_UMAMI_URL:-http://localhost:3001}
+        NEXT_PUBLIC_UMAMI_WEBSITE_ID: ${NEXT_PUBLIC_UMAMI_WEBSITE_ID:-}
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     depends_on:
@@ -34,6 +36,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-scraper}
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init-umami-db.sh:/docker-entrypoint-initdb.d/init-umami-db.sh
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:
@@ -41,6 +44,19 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+
+  umami:
+    image: ghcr.io/umami-software/umami:postgresql-latest
+    ports:
+      - "${UMAMI_PORT:-3001}:3000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/umami
+      DATABASE_TYPE: postgresql
+      APP_SECRET: ${UMAMI_APP_SECRET:-replace-me-with-a-random-string}
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
