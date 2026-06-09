@@ -181,7 +181,10 @@ function ResultsView({
               AutoRadar
             </Link>
             <button
-              onClick={() => setShowSearch(!showSearch)}
+              onClick={() => {
+                setShowSearch(!showSearch);
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
               className="flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-blue-600 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-all cursor-pointer"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

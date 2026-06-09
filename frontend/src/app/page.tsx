@@ -12,7 +12,7 @@ export default function Home() {
         transition={{ duration: 0.5, ease: "easeOut" }}
         className="text-center mb-10"
       >
-        <div className="inline-flex items-center gap-2 bg-white/80 backdrop-blur-sm text-slate-600 text-sm font-medium px-4 py-1.5 rounded-full mb-6 shadow-sm border border-slate-200/60">
+        <div className="inline-flex items-center gap-2 bg-white/80 backdrop-blur-sm text-slate-600 text-sm font-medium px-4 py-1.5 rounded-full mb-6 shadow-sm border border-slate-200/60 max-w-full text-center">
           <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
           AutoScout24 + Subito.it in tempo reale
         </div>

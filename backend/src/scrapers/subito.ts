@@ -53,6 +53,15 @@ function buildUrl(make: string, model: string, geo: GeoResult | null, page: numb
   return base;
 }
 
+function buildFallbackUrl(make: string, model: string, geo: GeoResult | null, page: number): string {
+  const makePath = getMakeSlug(make);
+  const regionSlug = getRegionSlug(geo);
+  const base = `https://www.subito.it/annunci-${regionSlug}/vendita/auto/${encodeURIComponent(makePath)}/`;
+  const params = new URLSearchParams({ q: model });
+  if (page > 1) params.set('o', String(page));
+  return `${base}?${params.toString()}`;
+}
+
 function getFeatureValue(features: Record<string, unknown>, key: string): string | null {
   const feat = features?.[key] as { values?: { value?: string }[] } | undefined;
   return feat?.values?.[0]?.value ?? null;
@@ -121,37 +130,36 @@ function parseSubitoAd(ad: SubitoAd): CarListing | null {
   };
 }
 
-export async function scrapeSubito(
+const SUBITO_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
+  'Accept-Encoding': 'gzip, deflate, br',
+  'Cache-Control': 'no-cache',
+  'Sec-Fetch-Dest': 'document',
+  'Sec-Fetch-Mode': 'navigate',
+  'Sec-Fetch-Site': 'none',
+  'Sec-Fetch-User': '?1',
+  'Upgrade-Insecure-Requests': '1',
+};
+
+type UrlBuilder = (make: string, model: string, geo: GeoResult | null, page: number) => string;
+
+async function fetchSubitoPages(
+  urlBuilder: UrlBuilder,
   make: string,
   model: string,
-  geo: GeoResult | null = null,
-  maxPages: number = 1,
-  filters?: SearchFilters,
+  geo: GeoResult | null,
+  maxPages: number,
 ): Promise<CarListing[]> {
-  console.log(`[subito] Fetching up to ${maxPages} pages (region: ${geo?.region ?? 'italia'})...`);
-
-  const allListings: CarListing[] = [];
+  const listings: CarListing[] = [];
 
   for (let page = 1; page <= maxPages; page++) {
-    const url = buildUrl(make, model, geo, page);
+    const url = urlBuilder(make, model, geo, page);
     console.log(`[subito] Page ${page}: ${url}`);
 
     try {
-      const res = await fetch(url, {
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-          'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
-          'Accept-Encoding': 'gzip, deflate, br',
-          'Cache-Control': 'no-cache',
-          'Sec-Fetch-Dest': 'document',
-          'Sec-Fetch-Mode': 'navigate',
-          'Sec-Fetch-Site': 'none',
-          'Sec-Fetch-User': '?1',
-          'Upgrade-Insecure-Requests': '1',
-        },
-      });
+      const res = await fetch(url, { headers: SUBITO_HEADERS });
 
       if (!res.ok) {
         console.log(`[subito] HTTP ${res.status} on page ${page}, stopping.`);
@@ -159,8 +167,6 @@ export async function scrapeSubito(
       }
 
       const html = await res.text();
-
-      // Extract __NEXT_DATA__ embedded JSON
       const match = html.match(/<script id="__NEXT_DATA__"[^>]*>(.*?)<\/script>/s);
       if (!match) {
         console.log(`[subito] No __NEXT_DATA__ found on page ${page}, stopping.`);
@@ -179,10 +185,9 @@ export async function scrapeSubito(
       for (const ad of ads) {
         if (ad.kind !== 'AdItem') continue;
         const listing = parseSubitoAd(ad);
-        if (listing) allListings.push(listing);
+        if (listing) listings.push(listing);
       }
 
-      // Stop if we've reached the last available page
       if (page >= (items?.totalPages ?? 1)) {
         console.log(`[subito] Reached last page (${page}).`);
         break;
@@ -191,6 +196,30 @@ export async function scrapeSubito(
       console.error(`[subito] Error fetching page ${page}:`, err);
       break;
     }
+  }
+
+  return listings;
+}
+
+export async function scrapeSubito(
+  make: string,
+  model: string,
+  geo: GeoResult | null = null,
+  maxPages: number = 1,
+  filters?: SearchFilters,
+): Promise<CarListing[]> {
+  console.log(`[subito] Fetching up to ${maxPages} pages (region: ${geo?.region ?? 'italia'})...`);
+
+  let allListings = await fetchSubitoPages(buildUrl, make, model, geo, maxPages);
+
+  // Fallback: if model path returned nothing, retry with query-based search
+  if (allListings.length === 0) {
+    console.log(`[subito] Model path returned 0 results, retrying with ?q=${model} fallback...`);
+    const fallbackListings = await fetchSubitoPages(buildFallbackUrl, make, model, geo, maxPages);
+    // Filter by model name in title to avoid false positives
+    const modelLower = model.toLowerCase();
+    allListings = fallbackListings.filter((l) => l.title.toLowerCase().includes(modelLower));
+    console.log(`[subito] Fallback found ${fallbackListings.length} total, ${allListings.length} matching "${model}"`);
   }
 
   // Apply post-scrape filters

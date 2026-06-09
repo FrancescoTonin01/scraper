@@ -39,7 +39,7 @@ export default function RootLayout({
           />
         )}
       </head>
-      <body className="min-h-full flex flex-col bg-slate-50 text-slate-900 font-sans">
+      <body className="min-h-full flex flex-col bg-slate-50 text-slate-900 font-sans overflow-x-hidden">
         {children}
         <FeedbackWidget />
       </body>
