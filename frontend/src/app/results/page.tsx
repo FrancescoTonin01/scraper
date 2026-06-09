@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useState, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -50,24 +51,36 @@ type SearchResponse = {
   warnings?: string[];
 };
 
-function ResultsContent() {
-  const searchParams = useSearchParams();
+type SearchRequestParams = {
+  make: string;
+  model: string;
+  location: string;
+  locationType: string;
+  radius: string;
+  page: number;
+  sort: string;
+  yearFrom: string;
+  yearTo: string;
+  kmMax: string;
+  fuel: string;
+};
+
+function ResultsView({
+  make,
+  model,
+  location,
+  locationType,
+  radius,
+  page,
+  sort,
+  yearFrom,
+  yearTo,
+  kmMax,
+  fuel,
+}: SearchRequestParams) {
   const router = useRouter();
-
-  const make = searchParams.get("make") ?? "";
-  const model = searchParams.get("model") ?? "";
-  const location = searchParams.get("location") ?? "";
-  const locationType = searchParams.get("locationType") ?? "";
-  const radius = searchParams.get("radius") ?? "100";
-  const page = parseInt(searchParams.get("page") ?? "1", 10);
-  const sort = searchParams.get("sort") ?? "price_asc";
-  const yearFrom = searchParams.get("yearFrom") ?? "";
-  const yearTo = searchParams.get("yearTo") ?? "";
-  const kmMax = searchParams.get("kmMax") ?? "";
-  const fuel = searchParams.get("fuel") ?? "";
-
   const [data, setData] = useState<SearchResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(Boolean(make && model));
   const [error, setError] = useState<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [msgIndex, setMsgIndex] = useState(0);
@@ -75,7 +88,6 @@ function ResultsContent() {
   // Rotate loading messages every 3s
   useEffect(() => {
     if (!loading) return;
-    setMsgIndex(0);
     const interval = setInterval(() => {
       setMsgIndex((prev) => (prev + 1) % LOADING_MESSAGES.length);
     }, 3000);
@@ -84,11 +96,6 @@ function ResultsContent() {
 
   useEffect(() => {
     if (!make || !model) return;
-
-    setLoading(true);
-    setError(null);
-    setData(null);
-    setShowSearch(false);
 
     const params = new URLSearchParams({
       make,
@@ -156,7 +163,7 @@ function ResultsContent() {
       <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-lg border-b border-slate-200/60">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between h-14">
-            <a href="/" className="flex items-center gap-2 font-bold text-lg text-slate-900 hover:text-blue-600 transition-colors" style={{ fontFamily: "var(--font-display), var(--font-inter), sans-serif" }}>
+            <Link href="/" className="flex items-center gap-2 font-bold text-lg text-slate-900 hover:text-blue-600 transition-colors" style={{ fontFamily: "var(--font-display), var(--font-inter), sans-serif" }}>
               <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <circle cx="12" cy="12" r="10" strokeWidth={1.5} className="text-blue-200" />
                 <circle cx="12" cy="12" r="6" strokeWidth={1.5} className="text-blue-300" />
@@ -164,7 +171,7 @@ function ResultsContent() {
                 <path strokeLinecap="round" strokeWidth={2} d="M12 12L18 6" className="text-blue-600" />
               </svg>
               AutoRadar
-            </a>
+            </Link>
             <button
               onClick={() => setShowSearch(!showSearch)}
               className="flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-blue-600 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-all cursor-pointer"
@@ -424,6 +431,40 @@ function ResultsContent() {
       </div>
     </main>
   );
+}
+
+function ResultsContent() {
+  const searchParams = useSearchParams();
+
+  const params: SearchRequestParams = {
+    make: searchParams.get("make") ?? "",
+    model: searchParams.get("model") ?? "",
+    location: searchParams.get("location") ?? "",
+    locationType: searchParams.get("locationType") ?? "",
+    radius: searchParams.get("radius") ?? "100",
+    page: parseInt(searchParams.get("page") ?? "1", 10),
+    sort: searchParams.get("sort") ?? "price_asc",
+    yearFrom: searchParams.get("yearFrom") ?? "",
+    yearTo: searchParams.get("yearTo") ?? "",
+    kmMax: searchParams.get("kmMax") ?? "",
+    fuel: searchParams.get("fuel") ?? "",
+  };
+
+  const requestKey = [
+    params.make,
+    params.model,
+    params.location,
+    params.locationType,
+    params.radius,
+    params.page,
+    params.sort,
+    params.yearFrom,
+    params.yearTo,
+    params.kmMax,
+    params.fuel,
+  ].join("|");
+
+  return <ResultsView key={requestKey} {...params} />;
 }
 
 export default function ResultsPage() {

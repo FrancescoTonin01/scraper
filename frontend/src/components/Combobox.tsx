@@ -39,7 +39,6 @@ export default function Combobox({
   const mouseInList = useRef(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const filtered = (() => {
     if (!value) return options;
@@ -83,7 +82,6 @@ export default function Combobox({
       onChange(opt);
       setOpen(false);
       setHighlightIndex(-1);
-      inputRef.current?.blur();
     },
     [onChange]
   );
@@ -138,7 +136,6 @@ export default function Combobox({
           </div>
         )}
         <input
-          ref={inputRef}
           id={id}
           type="text"
           role="combobox"
