@@ -61,7 +61,7 @@ async function dismissCookies(page: Page): Promise<void> {
   }
 }
 
-function parsePrice(text: string | null): number | null {
+export function parsePrice(text: string | null): number | null {
   if (!text) return null;
   // Match Italian price format: 1-3 digits optionally followed by .XXX groups
   // This avoids capturing footnote markers appended to the price (e.g. "14.4001" → 14400)
@@ -72,7 +72,7 @@ function parsePrice(text: string | null): number | null {
 }
 
 /** Parse date (MM/YYYY) and mileage from concatenated text like "01/20265 km" */
-function parseDateAndMileage(text: string): { year: number | null; mileage: number | null } {
+export function parseDateAndMileage(text: string): { year: number | null; mileage: number | null } {
   // Primary: match MM/YYYY immediately followed by mileage digits + "km"
   const combined = text.match(/(\d{2})\/(\d{4})([\d.]*\d)\s*km/i);
   if (combined) {
@@ -98,7 +98,7 @@ function parseDateAndMileage(text: string): { year: number | null; mileage: numb
   return { year, mileage };
 }
 
-function parseFuel(text: string | null): string | null {
+export function parseFuel(text: string | null): string | null {
   if (!text) return null;
   const fuels = ['Elettrica/Benzina', 'Elettrica/Diesel', 'Benzina', 'Diesel', 'GPL', 'Metano', 'Elettrica', 'Ibrida'];
   for (const fuel of fuels) {
@@ -107,7 +107,7 @@ function parseFuel(text: string | null): string | null {
   return null;
 }
 
-function extractCity(text: string): string | null {
+export function extractCity(text: string): string | null {
   // AutoScout format: "IT-{ZIP} {City} - {Province} - {Code}" or "IT-{ZIP} {City} - {Code}"
   const match = text.match(/IT-\d{5}\s+(.+?)(?:\s+-\s+[A-Za-zÀ-ÿ\s]+)?(?:\s+-\s+[A-Za-z]{2})/);
   if (match) return match[1].trim();
@@ -157,23 +157,28 @@ async function scrapePage(browserPage: Page): Promise<CarListing[]> {
         const imgEl = article.querySelector('img');
         imageUrl = imgEl?.getAttribute('data-src') ?? imgEl?.getAttribute('src') ?? null;
       }
-      // Upscale AutoScout CDN thumbnails to larger size
+      // Upscale AutoScout CDN thumbnails to larger size for better quality
       if (imageUrl && imageUrl.includes('autoscout24.net')) {
-        imageUrl = imageUrl.replace(/_\d+x\d+\./, '_800x600.');
+        imageUrl = imageUrl.replace(/_\d+x\d+\./, '_1280x960.');
       }
 
       const metaText = article.textContent ?? '';
 
-      // AutoScout does NOT render transmission as a separate field in listing cards.
-      // Extract it from the title/subtitle — "auto" suffix = automatic, nothing = check for "manuale"
+      // Extract transmission from multiple sources:
+      // 1) Title-level keywords like "Auto" (short for automatico), "Steptronic", etc.
+      // 2) Full article text for "Cambio automatico" / "Cambio manuale"
       let transmissionText: string | null = null;
-      const titleFull = (article.querySelector('h2')?.textContent ?? '') + ' ' +
-        (Array.from(article.querySelectorAll('span')).slice(0, 4).map(s => s.textContent?.trim()).join(' '));
-      const titleLower = titleFull.toLowerCase();
-      // Match "auto" as a standalone word (not part of "automobile", "autoscout", etc.)
-      if (/\bauto\b/.test(titleLower) || /\bautomatico\b/.test(titleLower) || /\bautomatica\b/.test(titleLower) || /\bsteptronic\b/.test(titleLower) || /\bdsg\b/.test(titleLower) || /\bpdk\b/.test(titleLower) || /\bs[ -]?tronic\b/.test(titleLower)) {
+      const titleText = (article.querySelector('h2')?.textContent ?? '').toLowerCase();
+      const metaLower = metaText.toLowerCase();
+
+      // Check title for short keywords (safe — title is small, no false matches)
+      const titleHasAuto = /\bauto\b/.test(titleText) || /\bautomatico\b/.test(titleText) || /\bautomatica\b/.test(titleText) || /\bsteptronic\b/.test(titleText) || /\bdsg\b/.test(titleText) || /\bpdk\b/.test(titleText) || /\bs[ -]?tronic\b/.test(titleText) || /\btiptronic\b/.test(titleText);
+      // Check full text for structured "Cambio ..." fields
+      const textHasAuto = /cambio\s+automatico/.test(metaLower) || /\bautomatico\b/.test(metaLower) || /\bautomatica\b/.test(metaLower) || /\bsteptronic\b/.test(metaLower) || /\bdsg\b/.test(metaLower) || /\bpdk\b/.test(metaLower) || /\bs[ -]?tronic\b/.test(metaLower) || /\btiptronic\b/.test(metaLower);
+
+      if (titleHasAuto || textHasAuto) {
         transmissionText = 'Automatico';
-      } else if (/\bmanuale\b/.test(titleLower)) {
+      } else if (/\bmanuale\b/.test(titleText) || /cambio\s+manuale/.test(metaLower) || /\bmanuale\b/.test(metaLower)) {
         transmissionText = 'Manuale';
       }
 

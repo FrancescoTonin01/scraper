@@ -1,11 +1,56 @@
-name: Deploy to Hetzner VPS
+name: CI & Deploy
 
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      # Backend
+      - name: Install backend dependencies
+        run: cd backend && npm ci
+
+      - name: Backend type-check
+        run: cd backend && npx tsc --noEmit
+
+      - name: Backend tests
+        run: cd backend && npm test
+
+      # Frontend
+      - name: Install frontend dependencies
+        run: cd frontend && npm ci
+
+      - name: Frontend lint
+        run: cd frontend && npm run lint
+
+      - name: Frontend type-check
+        run: cd frontend && npx tsc --noEmit
+
+      - name: Frontend tests
+        run: cd frontend && npm test
+
+      - name: Frontend build
+        run: cd frontend && npm run build
+        env:
+          NEXT_PUBLIC_API_URL: https://auto-radar.it
+
   deploy:
+    needs: ci
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Deploy via SSH

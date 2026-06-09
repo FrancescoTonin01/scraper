@@ -143,6 +143,7 @@ function ResultsContent() {
 
   function handlePageChange(newPage: number) {
     updateParams({ page: String(newPage) });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function handleSortChange(newSort: string) {
