@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import { Inter, DM_Sans } from "next/font/google";
 import Script from "next/script";
+import { Suspense } from "react";
 import FeedbackWidget from "@/components/FeedbackWidget";
+import Navbar from "@/components/Navbar";
+import ScrollToTop from "@/components/ScrollToTop";
 import "./globals.css";
 
 const inter = Inter({
@@ -40,6 +43,10 @@ export default function RootLayout({
         )}
       </head>
       <body className="min-h-full flex flex-col bg-slate-50 text-slate-900 font-sans overflow-x-hidden">
+        <Navbar />
+        <Suspense>
+          <ScrollToTop />
+        </Suspense>
         {children}
         <FeedbackWidget />
       </body>

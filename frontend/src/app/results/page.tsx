@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useState, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -166,35 +165,24 @@ function ResultsView({
   }
 
   return (
-    <main className="flex-1 bg-slate-50 min-h-screen">
-      {/* Header */}
-      <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-lg border-b border-slate-200/60">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="flex items-center justify-between h-14">
-            <Link href="/" className="flex items-center gap-2 font-bold text-lg text-slate-900 hover:text-blue-600 transition-colors" style={{ fontFamily: "var(--font-display), var(--font-inter), sans-serif" }}>
-              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <circle cx="12" cy="12" r="10" strokeWidth={1.5} className="text-blue-200" />
-                <circle cx="12" cy="12" r="6" strokeWidth={1.5} className="text-blue-300" />
-                <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />
-                <path strokeLinecap="round" strokeWidth={2} d="M12 12L18 6" className="text-blue-600" />
-              </svg>
-              AutoRadar
-            </Link>
-            <button
-              onClick={() => {
-                setShowSearch(!showSearch);
-                window.scrollTo({ top: 0, behavior: "smooth" });
-              }}
-              className="flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-blue-600 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-all cursor-pointer"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              Modifica ricerca
-            </button>
-          </div>
+    <main className="flex-1 bg-slate-50 min-h-screen pt-14">
+      {/* Modifica ricerca button bar */}
+      <div className="sticky top-14 z-20 bg-white/80 backdrop-blur-lg border-b border-slate-200/60">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-end h-10">
+          <button
+            onClick={() => {
+              setShowSearch(!showSearch);
+              window.scrollTo({ top: 0, behavior: "smooth" });
+            }}
+            className="flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-blue-600 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-all cursor-pointer"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            Modifica ricerca
+          </button>
         </div>
-      </header>
+      </div>
 
       {/* Collapsible search */}
       <AnimatePresence>
