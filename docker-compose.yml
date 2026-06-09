@@ -54,6 +54,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/umami
       DATABASE_TYPE: postgresql
       APP_SECRET: ${UMAMI_APP_SECRET:-replace-me-with-a-random-string}
+      BASE_PATH: /umami
     depends_on:
       postgres:
         condition: service_healthy
