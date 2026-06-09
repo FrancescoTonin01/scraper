@@ -3,6 +3,11 @@
 import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
+type OptionGroup = {
+  label: string;
+  options: string[];
+};
+
 type ComboboxProps = {
   id: string;
   label: string;
@@ -10,6 +15,7 @@ type ComboboxProps = {
   value: string;
   onChange: (value: string) => void;
   options: string[];
+  groups?: OptionGroup[];
   required?: boolean;
   icon?: ReactNode;
   error?: string;
@@ -22,19 +28,37 @@ export default function Combobox({
   value,
   onChange,
   options,
+  groups,
   required,
   icon,
   error,
 }: ComboboxProps) {
   const [open, setOpen] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(-1);
+  const highlightSource = useRef<"keyboard" | "mouse">("keyboard");
+  const mouseInList = useRef(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const filtered = value
-    ? options.filter((o) => o.toLowerCase().includes(value.toLowerCase()))
-    : options;
+  const filtered = (() => {
+    if (!value) return options;
+    const v = value.toLowerCase();
+    // Bucket by match quality: exact > startsWith > word-boundary > includes
+    const exact: string[] = [];
+    const startsWith: string[] = [];
+    const wordBoundary: string[] = [];
+    const includes: string[] = [];
+    const wordRe = new RegExp(`\\b${v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i');
+    for (const o of options) {
+      const oLower = o.toLowerCase();
+      if (oLower === v) exact.push(o);
+      else if (oLower.startsWith(v)) startsWith.push(o);
+      else if (wordRe.test(o)) wordBoundary.push(o);
+      else if (oLower.includes(v)) includes.push(o);
+    }
+    return [...exact, ...startsWith, ...wordBoundary, ...includes];
+  })();
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -47,8 +71,9 @@ export default function Combobox({
   }, []);
 
   useEffect(() => {
-    if (highlightIndex >= 0 && listRef.current) {
-      const item = listRef.current.children[highlightIndex] as HTMLElement;
+    if (highlightIndex >= 0 && highlightSource.current === "keyboard" && !mouseInList.current && listRef.current) {
+      const items = listRef.current.querySelectorAll('[role="option"]');
+      const item = items[highlightIndex] as HTMLElement;
       item?.scrollIntoView({ block: "nearest" });
     }
   }, [highlightIndex]);
@@ -66,6 +91,7 @@ export default function Combobox({
   function handleKeyDown(e: React.KeyboardEvent) {
     if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
       setOpen(true);
+      highlightSource.current = "keyboard";
       setHighlightIndex(0);
       e.preventDefault();
       return;
@@ -76,10 +102,12 @@ export default function Combobox({
     switch (e.key) {
       case "ArrowDown":
         e.preventDefault();
+        highlightSource.current = "keyboard";
         setHighlightIndex((i) => Math.min(i + 1, filtered.length - 1));
         break;
       case "ArrowUp":
         e.preventDefault();
+        highlightSource.current = "keyboard";
         setHighlightIndex((i) => Math.max(i - 1, 0));
         break;
       case "Enter":
@@ -151,27 +179,66 @@ export default function Combobox({
             exit={{ opacity: 0, y: -4, scale: 0.98 }}
             transition={{ duration: 0.15, ease: "easeOut" }}
             className="absolute z-20 mt-1.5 w-full max-h-56 overflow-auto rounded-xl border border-slate-200 bg-white shadow-xl shadow-slate-200/50 py-1"
+            onMouseEnter={() => { mouseInList.current = true; }}
+            onMouseLeave={() => { mouseInList.current = false; }}
           >
-            {filtered.map((opt, i) => (
-              <li
-                key={opt}
-                id={`${id}-option-${i}`}
-                role="option"
-                aria-selected={i === highlightIndex}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  selectOption(opt);
-                }}
-                onMouseEnter={() => setHighlightIndex(i)}
-                className={`px-3 py-2 text-sm cursor-pointer transition-colors ${
-                  i === highlightIndex
-                    ? "bg-blue-50 text-blue-700 font-medium"
-                    : "text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                {opt}
-              </li>
-            ))}
+            {/* When groups are provided and user is not filtering, show grouped layout */}
+            {groups && !value ? (
+              (() => {
+                let flatIndex = 0;
+                return groups.map((group, gi) => (
+                  <li key={group.label || gi} role="presentation">
+                    <ul role="group">
+                      {group.options.map((opt, oi) => {
+                        const idx = flatIndex++;
+                        const isFirst = oi === 0 && group.label;
+                        return (
+                          <li
+                            key={opt}
+                            id={`${id}-option-${idx}`}
+                            role="option"
+                            aria-selected={idx === highlightIndex}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              selectOption(opt);
+                            }}
+                            onMouseEnter={() => { highlightSource.current = "mouse"; setHighlightIndex(idx); }}
+                            className={`px-3 py-2 text-sm cursor-pointer transition-colors ${
+                              idx === highlightIndex
+                                ? "bg-blue-50 text-blue-700 font-medium"
+                                : "text-slate-700 hover:bg-slate-50"
+                            } ${isFirst && gi > 0 ? "border-t border-slate-100 mt-1 pt-2.5" : ""} ${isFirst ? "font-semibold" : "pl-5"}`}
+                          >
+                            {opt}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </li>
+                ));
+              })()
+            ) : (
+              filtered.map((opt, i) => (
+                <li
+                  key={opt}
+                  id={`${id}-option-${i}`}
+                  role="option"
+                  aria-selected={i === highlightIndex}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    selectOption(opt);
+                  }}
+                  onMouseEnter={() => { highlightSource.current = "mouse"; setHighlightIndex(i); }}
+                  className={`px-3 py-2 text-sm cursor-pointer transition-colors ${
+                    i === highlightIndex
+                      ? "bg-blue-50 text-blue-700 font-medium"
+                      : "text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  {opt}
+                </li>
+              ))
+            )}
           </motion.ul>
         )}
       </AnimatePresence>

@@ -46,3 +46,21 @@ export function getRegionNames(): string[] {
 export function getProvinceNames(): string[] {
   return ITALIAN_REGIONS.flatMap((r) => r.provinces);
 }
+
+export function getProvincesForRegion(region: string): string[] {
+  const r = ITALIAN_REGIONS.find(
+    (r) => r.region.toLowerCase() === region.toLowerCase()
+  );
+  return r ? r.provinces : [];
+}
+
+/**
+ * Check if a city string (as scraped, e.g. "Milano", "Bergamo")
+ * belongs to the given region by matching against province names.
+ */
+export function isCityInRegion(city: string, region: string): boolean {
+  const provinces = getProvincesForRegion(region);
+  if (provinces.length === 0) return false;
+  const cityLower = city.toLowerCase();
+  return provinces.some((p) => cityLower.includes(p.toLowerCase()) || p.toLowerCase().includes(cityLower));
+}

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Radar circles -->
+  <circle cx="16" cy="16" r="14" stroke="#93c5fd" stroke-width="1.5" fill="#eff6ff"/>
+  <circle cx="16" cy="16" r="9.5" stroke="#93c5fd" stroke-width="1" fill="none"/>
+  <circle cx="16" cy="16" r="5" stroke="#93c5fd" stroke-width="1" fill="none"/>
+  <!-- Radar sweep line -->
+  <line x1="16" y1="16" x2="26" y2="6" stroke="#2563eb" stroke-width="2" stroke-linecap="round"/>
+  <!-- Center dot -->
+  <circle cx="16" cy="16" r="2" fill="#2563eb"/>
+  <!-- Car silhouette (small, bottom-right quadrant) -->
+  <path d="M19 20.5c-.3-.8-.8-1.2-1.2-1.5l-.8-1.5h5l-.8 1.5c-.4.3-.9.7-1.2 1.5" stroke="#1e40af" stroke-width="0.8" fill="none"/>
+  <rect x="16.5" y="19.5" width="6" height="2.5" rx="0.8" fill="#2563eb"/>
+  <!-- Car wheels -->
+  <circle cx="18" cy="22.2" r="0.7" fill="#1e3a5f"/>
+  <circle cx="21.5" cy="22.2" r="0.7" fill="#1e3a5f"/>
+  <!-- Car windows -->
+  <path d="M17.8 19.5l.5-1.2h3l.5 1.2" stroke="#bfdbfe" stroke-width="0.5" fill="#bfdbfe" opacity="0.7"/>
+</svg>

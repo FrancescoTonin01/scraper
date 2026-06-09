@@ -258,9 +258,114 @@ export function getMakeNames(): string[] {
   return CAR_MAKES_MODELS.map((m) => m.name);
 }
 
+/**
+ * Grouping map: macro-category model → sub-models.
+ * Selecting a macro returns all sub-models under it in search.
+ * Selecting a specific sub-model returns only that model.
+ */
+export const MODEL_GROUPS: Record<string, Record<string, string[]>> = {
+  BMW: {
+    "Serie 1": ["114", "116", "118", "120", "125", "130", "135"],
+    "Serie 2": ["214", "216", "218", "220", "225"],
+    "Serie 3": ["316", "318", "320", "325", "328", "330", "335", "340"],
+    "Serie 4": ["418", "420", "425", "430", "435", "440"],
+    "Serie 5": ["518", "520", "525", "530", "535", "540", "550"],
+    "Serie 6": ["630", "640", "650"],
+    "Serie 7": ["730", "740", "750", "760"],
+    "Serie 8": ["840", "850"],
+  },
+  "Mercedes-Benz": {
+    "Classe A": [],
+    "Classe B": [],
+    "Classe C": [],
+    "Classe E": [],
+    "Classe G": [],
+    "Classe S": [],
+    "Classe V": [],
+  },
+  Fiat: {
+    "Punto": ["Punto Evo", "Grande Punto"],
+    "500": ["500C", "500L", "500X"],
+    "Panda": ["New Panda"],
+  },
+  Porsche: {
+    "911": ["911 Carrera", "911 Targa", "911 Turbo", "911 GT3", "911 GT3 RS", "911 GT2 RS"],
+    "718 Boxster": [],
+    "718 Cayman": [],
+    "718 Spyder": [],
+    "Cayenne": ["Cayenne Coupé"],
+    "Macan": ["Macan T"],
+    "Panamera": ["Panamera Sport Turismo"],
+    "Taycan": ["Taycan Cross Turismo"],
+  },
+  Abarth: {
+    "500": ["595", "695"],
+    "Grande Punto": ["Punto Evo"],
+  },
+};
+
+/**
+ * Get the parent (macro) model for a given sub-model, if any.
+ * e.g. getParentModel("BMW", "318") → "Serie 3"
+ */
+export function getParentModel(makeName: string, subModel: string): string | null {
+  const groups = MODEL_GROUPS[makeName];
+  if (!groups) return null;
+  for (const [parent, subs] of Object.entries(groups)) {
+    if (subs.some((s) => s.toLowerCase() === subModel.toLowerCase())) {
+      return parent;
+    }
+  }
+  return null;
+}
+
+/**
+ * Get sub-models for a macro-category model.
+ * e.g. getSubModels("BMW", "Serie 3") → ["316", "318", "320", ...]
+ */
+export function getSubModels(makeName: string, model: string): string[] {
+  return MODEL_GROUPS[makeName]?.[model] ?? [];
+}
+
 export function getModelsForMake(makeName: string): string[] {
   const make = CAR_MAKES_MODELS.find(
     (m) => m.name.toLowerCase() === makeName.toLowerCase()
   );
   return make?.models ?? [];
+}
+
+/**
+ * Get models for a make, organized into groups for the Combobox.
+ * Returns { label: string; options: string[] }[] where label is the group header
+ * and a flat "Altro" group for ungrouped models.
+ */
+export function getGroupedModelsForMake(makeName: string): { label: string; options: string[] }[] {
+  const allModels = getModelsForMake(makeName);
+  if (allModels.length === 0) return [];
+
+  const groups = MODEL_GROUPS[makeName];
+  if (!groups) return [{ label: "", options: allModels }];
+
+  const result: { label: string; options: string[] }[] = [];
+  const usedModels = new Set<string>();
+
+  for (const [parent, subs] of Object.entries(groups)) {
+    const groupOptions: string[] = [parent];
+    usedModels.add(parent);
+    for (const sub of subs) {
+      if (allModels.some((m) => m.toLowerCase() === sub.toLowerCase())) {
+        groupOptions.push(sub);
+        usedModels.add(sub);
+      }
+    }
+    result.push({ label: parent, options: groupOptions });
+  }
+
+  // Remaining ungrouped models
+  const remaining = allModels.filter((m) => !usedModels.has(m));
+  if (remaining.length > 0) {
+    result.push({ label: "Altro", options: remaining });
+  }
+
+  return result;
 }

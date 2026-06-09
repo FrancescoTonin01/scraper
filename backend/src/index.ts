@@ -5,7 +5,7 @@ import { scrapeAutoScout } from './scrapers/autoscout.js';
 import { scrapeSubito } from './scrapers/subito.js';
 import { geocodeCity } from './utils/geocode.js';
 import { isValidMake, isValidModelForMake } from './data/makes.js';
-import { isValidLocation } from './data/locations.js';
+import { isValidLocation, isCityInRegion } from './data/locations.js';
 import type { CarListing, SearchResponse } from './types.js';
 
 const app = express();
@@ -170,6 +170,20 @@ app.get('/api/search', async (req, res) => {
   if (allListings.length === 0 && warnings.length === 2) {
     res.status(500).json({ error: 'Both scrapers failed', warnings });
     return;
+  }
+
+  // For region searches, post-filter AutoScout results to only include
+  // listings whose city matches a province in the target region.
+  if (isRegionSearch && location) {
+    const before = allListings.length;
+    allListings = allListings.filter((l) => {
+      // Keep Subito results as-is (already region-filtered by URL slug)
+      if (l.source === 'subito') return true;
+      // AutoScout: keep only if city matches the region, or if no city info
+      if (!l.city) return false;
+      return isCityInRegion(l.city, location);
+    });
+    console.log(`[search] Region post-filter: ${before} → ${allListings.length} listings (region: ${location})`);
   }
 
   // Store in cache

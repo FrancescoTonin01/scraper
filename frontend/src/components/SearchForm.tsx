@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Combobox from "./Combobox";
-import { getMakeNames, getModelsForMake } from "@/data/carMakesModels";
+import { getMakeNames, getModelsForMake, getGroupedModelsForMake } from "@/data/carMakesModels";
 import { getLocationOptions, extractLocationName, isRegion, resolveLocationInput } from "@/data/italianLocations";
 
 const RADIUS_OPTIONS = [25, 50, 100, 200, 500];
@@ -66,6 +66,7 @@ export default function SearchForm({
 
   const makeOptions = useMemo(() => getMakeNames(), []);
   const modelOptions = useMemo(() => getModelsForMake(make), [make]);
+  const modelGroups = useMemo(() => getGroupedModelsForMake(make), [make]);
   const locationOptions = useMemo(() => getLocationOptions(), []);
 
   const activeFilterCount = [yearFrom, yearTo, kmMax, fuel].filter(Boolean).length;
@@ -170,6 +171,7 @@ export default function SearchForm({
             value={model}
             onChange={setModel}
             options={modelOptions}
+            groups={modelGroups.length > 1 ? modelGroups : undefined}
             required
             error={modelError}
             icon={
@@ -271,7 +273,7 @@ export default function SearchForm({
             >
               <div className="border-t border-slate-100 pt-4 pb-1 space-y-3">
                 {/* Year range */}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label
                       htmlFor="yearFrom"
@@ -337,7 +339,7 @@ export default function SearchForm({
                 </div>
 
                 {/* Km max + Fuel */}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label
                       htmlFor="kmMax"
