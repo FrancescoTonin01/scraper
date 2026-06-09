@@ -281,6 +281,43 @@ app.post('/api/feedback', async (req, res) => {
   res.status(201).json({ message: 'Grazie per il tuo feedback!' });
 });
 
+// --------------- Admin endpoints ---------------
+const ADMIN_KEY = process.env.ADMIN_KEY ?? '';
+
+function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction): void {
+  if (!ADMIN_KEY || req.query.key !== ADMIN_KEY) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+  next();
+}
+
+app.get('/api/admin/feedback', requireAdmin, async (_req, res) => {
+  const feedback = await prisma.feedback.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+  });
+  const stats = {
+    total: feedback.length,
+    avgRating: feedback.length > 0
+      ? +(feedback.reduce((sum, f) => sum + f.rating, 0) / feedback.length).toFixed(1)
+      : 0,
+  };
+  res.json({ stats, feedback });
+});
+
+app.get('/api/admin/alerts', requireAdmin, async (_req, res) => {
+  const alerts = await prisma.alertSubscription.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+  });
+  const stats = {
+    total: alerts.length,
+    uniqueEmails: new Set(alerts.map((a) => a.email)).size,
+  };
+  res.json({ stats, alerts });
+});
+
 app.listen(PORT, () => {
   console.log(`\n🚗 Car Aggregator API running on http://localhost:${PORT}`);
   console.log(`   Health: http://localhost:${PORT}/api/health`);
