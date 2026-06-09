@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-export default function Navbar() {
+export default function Navbar({ actions }: { actions?: React.ReactNode }) {
   const pathname = usePathname();
   const isHome = pathname === "/";
 
@@ -60,6 +60,7 @@ export default function Navbar() {
             </svg>
             AutoRadar
           </Link>
+          {actions}
         </div>
       </div>
     </header>

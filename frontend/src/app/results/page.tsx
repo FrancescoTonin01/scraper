@@ -3,6 +3,7 @@
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useState, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import Navbar from "@/components/Navbar";
 
 const LOADING_MESSAGES = [
   "Stiamo cercando le migliori auto per te…",
@@ -166,9 +167,8 @@ function ResultsView({
 
   return (
     <main className="flex-1 bg-slate-50 min-h-screen pt-14">
-      {/* Modifica ricerca button bar */}
-      <div className="sticky top-14 z-20 bg-white/80 backdrop-blur-lg border-b border-slate-200/60">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-end h-10">
+      <Navbar
+        actions={
           <button
             onClick={() => {
               setShowSearch(!showSearch);
@@ -181,8 +181,8 @@ function ResultsView({
             </svg>
             Modifica ricerca
           </button>
-        </div>
-      </div>
+        }
+      />
 
       {/* Collapsible search */}
       <AnimatePresence>
