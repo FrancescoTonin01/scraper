@@ -18,6 +18,17 @@ export type SearchParams = {
   radius?: number;
   page?: number;
   pageSize?: number;
+  yearFrom?: number;
+  yearTo?: number;
+  kmMax?: number;
+  fuel?: string;
+};
+
+export type SearchFilters = {
+  yearFrom?: number;
+  yearTo?: number;
+  kmMax?: number;
+  fuel?: string;
 };
 
 export type GeoResult = {

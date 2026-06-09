@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 
 type ComboboxProps = {
   id: string;
@@ -11,6 +12,7 @@ type ComboboxProps = {
   options: string[];
   required?: boolean;
   icon?: ReactNode;
+  error?: string;
 };
 
 export default function Combobox({
@@ -22,6 +24,7 @@ export default function Combobox({
   options,
   required,
   icon,
+  error,
 }: ComboboxProps) {
   const [open, setOpen] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(-1);
@@ -130,39 +133,48 @@ export default function Combobox({
             if (filtered.length > 0) setOpen(true);
           }}
           onKeyDown={handleKeyDown}
-          className={`w-full rounded-xl border border-slate-200 bg-slate-50 ${icon ? "pl-9" : "pl-4"} pr-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white transition-all`}
+          className={`w-full rounded-xl border ${error ? "border-red-300 bg-red-50/50" : "border-slate-200 bg-slate-50"} ${icon ? "pl-9" : "pl-4"} pr-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 ${error ? "focus:ring-red-400" : "focus:ring-blue-500"} focus:border-transparent focus:bg-white transition-all`}
         />
+        {error && (
+          <p className="mt-1 text-xs text-red-500">{error}</p>
+        )}
       </div>
 
-      {open && filtered.length > 0 && (
-        <ul
-          ref={listRef}
-          id={`${id}-listbox`}
-          role="listbox"
-          className="absolute z-20 mt-1.5 w-full max-h-56 overflow-auto rounded-xl border border-slate-200 bg-white shadow-xl shadow-slate-200/50 py-1"
-        >
-          {filtered.map((opt, i) => (
-            <li
-              key={opt}
-              id={`${id}-option-${i}`}
-              role="option"
-              aria-selected={i === highlightIndex}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                selectOption(opt);
-              }}
-              onMouseEnter={() => setHighlightIndex(i)}
-              className={`px-3 py-2 text-sm cursor-pointer transition-colors ${
-                i === highlightIndex
-                  ? "bg-blue-50 text-blue-700 font-medium"
-                  : "text-slate-700 hover:bg-slate-50"
-              }`}
-            >
-              {opt}
-            </li>
-          ))}
-        </ul>
-      )}
+      <AnimatePresence>
+        {open && filtered.length > 0 && (
+          <motion.ul
+            ref={listRef}
+            id={`${id}-listbox`}
+            role="listbox"
+            initial={{ opacity: 0, y: -4, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.98 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
+            className="absolute z-20 mt-1.5 w-full max-h-56 overflow-auto rounded-xl border border-slate-200 bg-white shadow-xl shadow-slate-200/50 py-1"
+          >
+            {filtered.map((opt, i) => (
+              <li
+                key={opt}
+                id={`${id}-option-${i}`}
+                role="option"
+                aria-selected={i === highlightIndex}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  selectOption(opt);
+                }}
+                onMouseEnter={() => setHighlightIndex(i)}
+                className={`px-3 py-2 text-sm cursor-pointer transition-colors ${
+                  i === highlightIndex
+                    ? "bg-blue-50 text-blue-700 font-medium"
+                    : "text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                {opt}
+              </li>
+            ))}
+          </motion.ul>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

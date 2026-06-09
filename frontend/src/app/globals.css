@@ -9,6 +9,10 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-inter);
+  --color-accent-50: #fff7ed;
+  --color-accent-100: #ffedd5;
+  --color-accent-500: #f97316;
+  --color-accent-600: #ea580c;
 }
 
 body {
@@ -26,4 +30,54 @@ body {
   background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* Animated gradient for hero background */
+@keyframes gradientShift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+.hero-gradient {
+  background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 25%, #fef3c7 50%, #f8fafc 75%, #eff6ff 100%);
+  background-size: 300% 300%;
+  animation: gradientShift 8s ease infinite;
+}
+
+/* Radar sweep animation for loading */
+@keyframes radarSweep {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes radarPulse {
+  0%, 100% { opacity: 0; transform: scale(0.5); }
+  50% { opacity: 0.4; transform: scale(1); }
+}
+
+.radar-sweep {
+  animation: radarSweep 2s linear infinite;
+}
+
+.radar-pulse-1 { animation: radarPulse 2s ease-out infinite; }
+.radar-pulse-2 { animation: radarPulse 2s ease-out infinite 0.5s; }
+.radar-pulse-3 { animation: radarPulse 2s ease-out infinite 1s; }
+
+/* Subtle glow for active buttons */
+@keyframes subtleGlow {
+  0%, 100% { box-shadow: 0 4px 14px 0 rgba(59, 130, 246, 0.25); }
+  50% { box-shadow: 0 4px 20px 0 rgba(59, 130, 246, 0.4); }
+}
+
+.btn-glow {
+  animation: subtleGlow 2.5s ease-in-out infinite;
+}
+
+/* Source accent border */
+.card-accent-autoscout {
+  border-left: 3px solid #2563eb;
+}
+
+.card-accent-subito {
+  border-left: 3px solid #f97316;
 }

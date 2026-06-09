@@ -4,12 +4,17 @@ import { z } from 'zod';
 import { scrapeAutoScout } from './scrapers/autoscout.js';
 import { scrapeSubito } from './scrapers/subito.js';
 import { geocodeCity } from './utils/geocode.js';
+import { isValidMake, isValidModelForMake } from './data/makes.js';
+import { isValidLocation } from './data/locations.js';
 import type { CarListing, SearchResponse } from './types.js';
 
 const app = express();
 const PORT = process.env.PORT ?? 4000;
 
-app.use(cors({ origin: ['http://localhost:3000', 'http://127.0.0.1:3000'] }));
+const allowedOrigins = (process.env.CORS_ORIGIN ?? 'http://localhost:3000')
+  .split(',')
+  .map((o) => o.trim());
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
 // --------------- In-memory cache ---------------
@@ -23,8 +28,8 @@ const searchCache = new Map<string, CacheEntry>();
 const CACHE_TTL = 15 * 60 * 1000; // 15 minutes
 const MAX_PAGES_PER_SOURCE = 3;
 
-function getCacheKey(make: string, model: string, location?: string, radius?: number): string {
-  return `${make}|${model}|${location ?? ''}|${radius ?? 100}`.toLowerCase();
+function getCacheKey(make: string, model: string, location?: string, radius?: number, yearFrom?: number, yearTo?: number, kmMax?: number, fuel?: string): string {
+  return `${make}|${model}|${location ?? ''}|${radius ?? 100}|${yearFrom ?? ''}|${yearTo ?? ''}|${kmMax ?? ''}|${fuel ?? ''}`.toLowerCase();
 }
 
 function cleanExpiredCache(): void {
@@ -62,10 +67,15 @@ const searchSchema = z.object({
   make: z.string().min(1, 'make is required'),
   model: z.string().min(1, 'model is required'),
   location: z.string().optional(),
+  locationType: z.enum(['region', 'city']).optional(),
   radius: z.coerce.number().min(1).max(500).default(100),
   page: z.coerce.number().min(1).default(1),
   pageSize: z.coerce.number().min(1).max(50).default(20),
   sort: z.enum(SORT_OPTIONS).default('price_asc'),
+  yearFrom: z.coerce.number().min(1900).max(2030).optional(),
+  yearTo: z.coerce.number().min(1900).max(2030).optional(),
+  kmMax: z.coerce.number().min(0).optional(),
+  fuel: z.string().optional(),
 });
 
 app.get('/api/search', async (req, res) => {
@@ -78,8 +88,24 @@ app.get('/api/search', async (req, res) => {
     return;
   }
 
-  const { make, model, location, radius, page, pageSize, sort } = parsed.data;
-  console.log(`\n[search] make=${make} model=${model} location=${location ?? 'Tutta Italia'} radius=${radius}km page=${page} sort=${sort}`);
+  const { make, model, location, locationType, radius, page, pageSize, sort, yearFrom, yearTo, kmMax, fuel } = parsed.data;
+
+  // Validate make/model/location against known data
+  if (!isValidMake(make)) {
+    res.status(400).json({ error: `Marca "${make}" non trovata. Controlla il nome e riprova.` });
+    return;
+  }
+  if (!isValidModelForMake(make, model)) {
+    res.status(400).json({ error: `Modello "${model}" non disponibile per ${make}. Controlla il nome e riprova.` });
+    return;
+  }
+  if (location && !isValidLocation(location)) {
+    res.status(400).json({ error: `Località "${location}" non trovata. Inserisci una regione o provincia italiana valida.` });
+    return;
+  }
+
+  const isRegionSearch = locationType === 'region';
+  console.log(`\n[search] make=${make} model=${model} location=${location ?? 'Tutta Italia'} type=${locationType ?? 'auto'} radius=${isRegionSearch ? 'N/A' : radius + 'km'} page=${page} sort=${sort} yearFrom=${yearFrom ?? '-'} yearTo=${yearTo ?? '-'} kmMax=${kmMax ?? '-'} fuel=${fuel ?? '-'}`);
 
   // Geocode location if provided
   let geo = null;
@@ -93,7 +119,7 @@ app.get('/api/search', async (req, res) => {
   }
 
   // Check cache
-  const cacheKey = getCacheKey(make, model, location, radius);
+  const cacheKey = getCacheKey(make, model, location, radius, yearFrom, yearTo, kmMax, fuel);
   const cached = searchCache.get(cacheKey);
 
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
@@ -117,9 +143,12 @@ app.get('/api/search', async (req, res) => {
 
   // Run scrapers in parallel, each scraping multiple pages
   const warnings: string[] = [];
+  const filters = { yearFrom, yearTo, kmMax, fuel };
+  // For region searches, pass null geo to AutoScout (no zip/radius filtering)
+  const autoscoutGeo = isRegionSearch ? null : geo;
   const [autoscoutResult, subitoResult] = await Promise.allSettled([
-    scrapeAutoScout(make, model, geo, radius, MAX_PAGES_PER_SOURCE),
-    scrapeSubito(make, model, geo, MAX_PAGES_PER_SOURCE),
+    scrapeAutoScout(make, model, autoscoutGeo, radius, MAX_PAGES_PER_SOURCE, filters),
+    scrapeSubito(make, model, geo, MAX_PAGES_PER_SOURCE, filters),
   ]);
 
   let allListings: CarListing[] = [];

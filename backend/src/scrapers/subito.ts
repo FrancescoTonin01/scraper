@@ -1,4 +1,5 @@
-import type { CarListing, GeoResult } from '../types.js';
+import type { CarListing, GeoResult, SearchFilters } from '../types.js';
+import { getMakeSlug, getModelSlug } from '../data/modelSlugs.js';
 
 // Map Italian region names (from Nominatim) to Subito URL slugs
 const REGION_SLUGS: Record<string, string> = {
@@ -44,8 +45,8 @@ function getRegionSlug(geo: GeoResult | null): string {
 }
 
 function buildUrl(make: string, model: string, geo: GeoResult | null, page: number): string {
-  const makePath = make.toLowerCase().replace(/\s+/g, '-');
-  const modelPath = model.toLowerCase().replace(/\s+/g, '-');
+  const makePath = getMakeSlug(make);
+  const modelPath = getModelSlug(make, model, 'subito');
   const regionSlug = getRegionSlug(geo);
   const base = `https://www.subito.it/annunci-${regionSlug}/vendita/auto/${encodeURIComponent(makePath)}/${encodeURIComponent(modelPath)}/`;
   if (page > 1) return `${base}?o=${page}`;
@@ -125,6 +126,7 @@ export async function scrapeSubito(
   model: string,
   geo: GeoResult | null = null,
   maxPages: number = 1,
+  filters?: SearchFilters,
 ): Promise<CarListing[]> {
   console.log(`[subito] Fetching up to ${maxPages} pages (region: ${geo?.region ?? 'italia'})...`);
 
@@ -184,9 +186,32 @@ export async function scrapeSubito(
     }
   }
 
+  // Apply post-scrape filters
+  let filtered = allListings;
+  if (filters) {
+    if (filters.yearFrom) {
+      filtered = filtered.filter((l) => l.year != null && l.year >= filters.yearFrom!);
+    }
+    if (filters.yearTo) {
+      filtered = filtered.filter((l) => l.year != null && l.year <= filters.yearTo!);
+    }
+    if (filters.kmMax) {
+      filtered = filtered.filter((l) => l.mileage != null && l.mileage <= filters.kmMax!);
+    }
+    if (filters.fuel) {
+      const fuelLower = filters.fuel.toLowerCase();
+      filtered = filtered.filter((l) => {
+        if (!l.fuel) return false;
+        const listingFuel = l.fuel.toLowerCase();
+        if (fuelLower === 'ibrida') return listingFuel.includes('ibrida') || listingFuel.includes('elettrica/');
+        return listingFuel.includes(fuelLower);
+      });
+    }
+  }
+
   // Deduplicate by URL
   const seen = new Set<string>();
-  const unique = allListings.filter((l) => {
+  const unique = filtered.filter((l) => {
     if (seen.has(l.originalUrl)) return false;
     seen.add(l.originalUrl);
     return true;

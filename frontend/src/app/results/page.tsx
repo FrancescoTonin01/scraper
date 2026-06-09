@@ -57,9 +57,14 @@ function ResultsContent() {
   const make = searchParams.get("make") ?? "";
   const model = searchParams.get("model") ?? "";
   const location = searchParams.get("location") ?? "";
+  const locationType = searchParams.get("locationType") ?? "";
   const radius = searchParams.get("radius") ?? "100";
   const page = parseInt(searchParams.get("page") ?? "1", 10);
   const sort = searchParams.get("sort") ?? "price_asc";
+  const yearFrom = searchParams.get("yearFrom") ?? "";
+  const yearTo = searchParams.get("yearTo") ?? "";
+  const kmMax = searchParams.get("kmMax") ?? "";
+  const fuel = searchParams.get("fuel") ?? "";
 
   const [data, setData] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -83,6 +88,7 @@ function ResultsContent() {
     setLoading(true);
     setError(null);
     setData(null);
+    setShowSearch(false);
 
     const params = new URLSearchParams({
       make,
@@ -92,6 +98,11 @@ function ResultsContent() {
       sort,
     });
     if (location) params.set("location", location);
+    if (locationType) params.set("locationType", locationType);
+    if (yearFrom) params.set("yearFrom", yearFrom);
+    if (yearTo) params.set("yearTo", yearTo);
+    if (kmMax) params.set("kmMax", kmMax);
+    if (fuel) params.set("fuel", fuel);
 
     const controller = new AbortController();
 
@@ -116,11 +127,16 @@ function ResultsContent() {
       });
 
     return () => controller.abort();
-  }, [make, model, location, radius, page, sort]);
+  }, [make, model, location, locationType, radius, page, sort, yearFrom, yearTo, kmMax, fuel]);
 
   function updateParams(overrides: Record<string, string>) {
     const params = new URLSearchParams({ make, model, radius, page: "1", sort });
     if (location) params.set("location", location);
+    if (locationType) params.set("locationType", locationType);
+    if (yearFrom) params.set("yearFrom", yearFrom);
+    if (yearTo) params.set("yearTo", yearTo);
+    if (kmMax) params.set("kmMax", kmMax);
+    if (fuel) params.set("fuel", fuel);
     for (const [k, v] of Object.entries(overrides)) params.set(k, v);
     router.push(`/results?${params.toString()}`);
   }
@@ -139,11 +155,14 @@ function ResultsContent() {
       <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-lg border-b border-slate-200/60">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between h-14">
-            <a href="/" className="flex items-center gap-2 font-bold text-lg text-slate-900 hover:text-blue-600 transition-colors">
+            <a href="/" className="flex items-center gap-2 font-bold text-lg text-slate-900 hover:text-blue-600 transition-colors" style={{ fontFamily: "var(--font-display), var(--font-inter), sans-serif" }}>
               <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 17h.01M12 17h.01M16 17h.01M3 9l2.5-4h13L21 9M3 9v8a2 2 0 002 2h14a2 2 0 002-2V9M3 9h18" />
+                <circle cx="12" cy="12" r="10" strokeWidth={1.5} className="text-blue-200" />
+                <circle cx="12" cy="12" r="6" strokeWidth={1.5} className="text-blue-300" />
+                <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />
+                <path strokeLinecap="round" strokeWidth={2} d="M12 12L18 6" className="text-blue-600" />
               </svg>
-              AutoAggregator
+              AutoRadar
             </a>
             <button
               onClick={() => setShowSearch(!showSearch)}
@@ -169,7 +188,7 @@ function ResultsContent() {
             className="overflow-hidden bg-white border-b border-slate-200/60"
           >
             <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5">
-              <SearchForm initialValues={{ make, model, location, radius }} />
+              <SearchForm initialValues={{ make, model, location, radius, yearFrom, yearTo, kmMax, fuel }} />
             </div>
           </motion.div>
         )}
@@ -217,10 +236,20 @@ function ResultsContent() {
         {loading && (
           <div>
             <div className="flex flex-col items-center justify-center gap-4 mb-8 py-6">
-              {/* Spinner */}
-              <div className="relative w-10 h-10">
-                <div className="absolute inset-0 rounded-full border-[3px] border-blue-100" />
-                <div className="absolute inset-0 rounded-full border-[3px] border-blue-600 border-t-transparent animate-spin" />
+              {/* Radar animation */}
+              <div className="relative w-16 h-16">
+                {/* Pulse rings */}
+                <div className="absolute inset-0 rounded-full border-2 border-blue-200 radar-pulse-1" />
+                <div className="absolute inset-2 rounded-full border-2 border-blue-300 radar-pulse-2" />
+                <div className="absolute inset-4 rounded-full border-2 border-blue-400 radar-pulse-3" />
+                {/* Center dot */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-3 h-3 rounded-full bg-blue-600" />
+                </div>
+                {/* Sweep line */}
+                <div className="absolute inset-0 radar-sweep">
+                  <div className="absolute top-0 left-1/2 w-0.5 h-1/2 bg-gradient-to-t from-blue-600 to-transparent origin-bottom -translate-x-1/2" />
+                </div>
               </div>
 
               {/* Rotating messages */}
@@ -303,8 +332,35 @@ function ResultsContent() {
                 </h1>
                 {location && (
                   <p className="text-sm text-slate-500 mt-0.5">
-                    vicino a {location} · raggio {radius} km
+                    {locationType === "region"
+                      ? `in ${location}`
+                      : `vicino a ${location} · raggio ${radius} km`}
                   </p>
+                )}
+                {/* Active filters chips */}
+                {(yearFrom || yearTo || kmMax || fuel) && (
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {yearFrom && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 text-xs text-blue-700 font-medium">
+                        Da {yearFrom}
+                      </span>
+                    )}
+                    {yearTo && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 text-xs text-blue-700 font-medium">
+                        A {yearTo}
+                      </span>
+                    )}
+                    {kmMax && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 text-xs text-blue-700 font-medium">
+                        Max {Number(kmMax).toLocaleString("it-IT")} km
+                      </span>
+                    )}
+                    {fuel && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 text-xs text-blue-700 font-medium capitalize">
+                        {fuel}
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
 

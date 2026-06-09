@@ -1,5 +1,16 @@
 import { chromium, type Browser, type Page } from 'playwright';
-import type { CarListing, GeoResult } from '../types.js';
+import type { CarListing, GeoResult, SearchFilters } from '../types.js';
+import { getMakeSlug, getModelSlug } from '../data/modelSlugs.js';
+
+// Map fuel filter values to AutoScout24 URL parameter codes
+const FUEL_MAP: Record<string, string> = {
+  benzina: 'B',
+  diesel: 'D',
+  elettrica: 'E',
+  gpl: 'L',
+  metano: 'M',
+  ibrida: '2', // Ibrida benzina; '3' = ibrida diesel
+};
 
 function buildUrl(
   make: string,
@@ -7,9 +18,10 @@ function buildUrl(
   geo: GeoResult | null,
   radius: number,
   page: number,
+  filters?: SearchFilters,
 ): string {
-  const makePath = make.toLowerCase().replace(/\s+/g, '-');
-  const modelPath = model.toLowerCase().replace(/\s+/g, '-');
+  const makePath = getMakeSlug(make);
+  const modelPath = getModelSlug(make, model, 'autoscout');
   const base = `https://www.autoscout24.it/lst/${encodeURIComponent(makePath)}/${encodeURIComponent(modelPath)}`;
 
   const params = new URLSearchParams({
@@ -25,6 +37,15 @@ function buildUrl(
   if (geo?.postcode) {
     params.set('zip', geo.postcode);
     params.set('zipr', String(radius));
+  }
+
+  // Advanced filters
+  if (filters?.yearFrom) params.set('fregfrom', String(filters.yearFrom));
+  if (filters?.yearTo) params.set('fregto', String(filters.yearTo));
+  if (filters?.kmMax) params.set('kmto', String(filters.kmMax));
+  if (filters?.fuel) {
+    const fuelCode = FUEL_MAP[filters.fuel.toLowerCase()];
+    if (fuelCode) params.set('fuel', fuelCode);
   }
 
   return `${base}?${params.toString()}`;
@@ -121,12 +142,42 @@ async function scrapePage(browserPage: Page): Promise<CarListing[]> {
                       article.querySelector('span[class*="Price"]');
       const priceText = priceEl?.textContent?.trim() ?? null;
 
-      const imgEl = article.querySelector('img');
-      const imageUrl = imgEl?.getAttribute('src') ?? imgEl?.getAttribute('data-src') ?? null;
+      // Try to get high-res image from <picture> srcset, data-src, or img src
+      let imageUrl: string | null = null;
+      const sourceEl = article.querySelector('picture source[type="image/webp"]');
+      if (sourceEl) {
+        const srcset = sourceEl.getAttribute('srcset');
+        if (srcset) {
+          // Pick the largest from srcset (last entry or highest resolution)
+          const urls = srcset.split(',').map(s => s.trim().split(/\s+/)[0]);
+          imageUrl = urls[urls.length - 1] || null;
+        }
+      }
+      if (!imageUrl) {
+        const imgEl = article.querySelector('img');
+        imageUrl = imgEl?.getAttribute('data-src') ?? imgEl?.getAttribute('src') ?? null;
+      }
+      // Upscale AutoScout CDN thumbnails to larger size
+      if (imageUrl && imageUrl.includes('autoscout24.net')) {
+        imageUrl = imageUrl.replace(/_\d+x\d+\./, '_800x600.');
+      }
 
       const metaText = article.textContent ?? '';
 
-      return { title, priceText, imageUrl, originalUrl: fullUrl, metaText };
+      // AutoScout does NOT render transmission as a separate field in listing cards.
+      // Extract it from the title/subtitle — "auto" suffix = automatic, nothing = check for "manuale"
+      let transmissionText: string | null = null;
+      const titleFull = (article.querySelector('h2')?.textContent ?? '') + ' ' +
+        (Array.from(article.querySelectorAll('span')).slice(0, 4).map(s => s.textContent?.trim()).join(' '));
+      const titleLower = titleFull.toLowerCase();
+      // Match "auto" as a standalone word (not part of "automobile", "autoscout", etc.)
+      if (/\bauto\b/.test(titleLower) || /\bautomatico\b/.test(titleLower) || /\bautomatica\b/.test(titleLower) || /\bsteptronic\b/.test(titleLower) || /\bdsg\b/.test(titleLower) || /\bpdk\b/.test(titleLower) || /\bs[ -]?tronic\b/.test(titleLower)) {
+        transmissionText = 'Automatico';
+      } else if (/\bmanuale\b/.test(titleLower)) {
+        transmissionText = 'Manuale';
+      }
+
+      return { title, priceText, imageUrl, originalUrl: fullUrl, metaText, transmissionText };
     });
   });
 
@@ -134,6 +185,8 @@ async function scrapePage(browserPage: Page): Promise<CarListing[]> {
     .filter((l): l is NonNullable<typeof l> => l !== null && !!l.title && !!l.originalUrl)
     .map((l) => {
       const { year, mileage } = parseDateAndMileage(l.metaText);
+      // Use structured transmission from DOM extraction
+      const transmission = l.transmissionText;
       return {
         source: 'autoscout' as const,
         title: l.title,
@@ -141,11 +194,7 @@ async function scrapePage(browserPage: Page): Promise<CarListing[]> {
         mileage,
         year,
         fuel: parseFuel(l.metaText),
-        transmission: l.metaText.includes('Automatico')
-          ? 'Automatico'
-          : l.metaText.includes('Manuale')
-            ? 'Manuale'
-            : null,
+        transmission,
         city: extractCity(l.metaText),
         imageUrl: l.imageUrl,
         originalUrl: l.originalUrl,
@@ -159,6 +208,7 @@ export async function scrapeAutoScout(
   geo: GeoResult | null,
   radius: number,
   maxPages: number = 1,
+  filters?: SearchFilters,
 ): Promise<CarListing[]> {
   console.log(`[autoscout] Scraping up to ${maxPages} pages...`);
 
@@ -175,7 +225,7 @@ export async function scrapeAutoScout(
     const allListings: CarListing[] = [];
 
     for (let page = 1; page <= maxPages; page++) {
-      const url = buildUrl(make, model, geo, radius, page);
+      const url = buildUrl(make, model, geo, radius, page, filters);
       console.log(`[autoscout] Page ${page}: ${url}`);
 
       await browserPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
