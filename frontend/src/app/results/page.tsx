@@ -210,7 +210,7 @@ function ResultsView({
         )}
       </AnimatePresence>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+      <div className="max-w-7xl mx-auto px-2 sm:px-6 py-4 sm:py-6">
         {/* Warnings */}
         {data?.warnings && data.warnings.length > 0 && (
           <motion.div

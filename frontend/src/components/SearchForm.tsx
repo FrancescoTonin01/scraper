@@ -269,7 +269,7 @@ export default function SearchForm({
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
               transition={{ duration: 0.25, ease: "easeInOut" }}
-              className="overflow-hidden"
+              className="overflow-x-hidden"
             >
               <div className="border-t border-slate-100 pt-4 pb-1 space-y-3">
                 {/* Year range */}
