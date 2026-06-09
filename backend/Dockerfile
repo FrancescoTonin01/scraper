@@ -1,5 +1,5 @@
 # ---- Base: Playwright image includes Chromium + system deps ----
-FROM mcr.microsoft.com/playwright:v1.52.0-noble AS base
+FROM mcr.microsoft.com/playwright:v1.60.0-noble AS base
 
 WORKDIR /app
 
