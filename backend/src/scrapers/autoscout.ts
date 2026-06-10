@@ -12,7 +12,13 @@ const FUEL_MAP: Record<string, string> = {
   ibrida: '2', // Ibrida benzina; '3' = ibrida diesel
 };
 
-function buildUrl(
+export type AutoScoutSearchTarget = {
+  label: string;
+  geo: GeoResult | null;
+  radius: number;
+};
+
+export function buildUrl(
   make: string,
   model: string,
   geo: GeoResult | null,
@@ -43,6 +49,8 @@ function buildUrl(
   if (filters?.yearFrom) params.set('fregfrom', String(filters.yearFrom));
   if (filters?.yearTo) params.set('fregto', String(filters.yearTo));
   if (filters?.kmMax) params.set('kmto', String(filters.kmMax));
+  if (filters?.priceFrom) params.set('pricefrom', String(filters.priceFrom));
+  if (filters?.priceTo) params.set('priceto', String(filters.priceTo));
   if (filters?.fuel) {
     const fuelCode = FUEL_MAP[filters.fuel.toLowerCase()];
     if (fuelCode) params.set('fuel', fuelCode);
@@ -109,8 +117,8 @@ export function parseFuel(text: string | null): string | null {
 
 export function extractCity(text: string): string | null {
   // AutoScout format: "IT-{ZIP} {City} - {Province} - {Code}" or "IT-{ZIP} {City} - {Code}"
-  const match = text.match(/IT-\d{5}\s+(.+?)(?:\s+-\s+[A-Za-zÀ-ÿ\s]+)?(?:\s+-\s+[A-Za-z]{2})/);
-  if (match) return match[1].trim();
+  const match = text.match(/IT-\d{5}\s+(.+?)(?:\s+-\s+[A-Za-zÀ-ÿ\s'.-]+)?\s+-\s+([A-Z]{2})/);
+  if (match) return `${match[1].trim()} (${match[2]})`;
 
   // Simpler fallback: "IT-{ZIP} {City}"
   const simple = text.match(/IT-\d{5}\s+([A-Za-zÀ-ÿ\s'.-]+?)(?:\s*[-\[+]|$)/);
@@ -215,7 +223,18 @@ export async function scrapeAutoScout(
   maxPages: number = 1,
   filters?: SearchFilters,
 ): Promise<CarListing[]> {
-  console.log(`[autoscout] Scraping up to ${maxPages} pages...`);
+  const label = geo?.postcode ? `zip ${geo.postcode}` : 'italia';
+  return scrapeAutoScoutTargets(make, model, [{ label, geo, radius }], maxPages, filters);
+}
+
+export async function scrapeAutoScoutTargets(
+  make: string,
+  model: string,
+  targets: AutoScoutSearchTarget[],
+  maxPages: number = 1,
+  filters?: SearchFilters,
+): Promise<CarListing[]> {
+  console.log(`[autoscout] Scraping ${targets.length} target(s), up to ${maxPages} pages each...`);
 
   let browser: Browser | null = null;
 
@@ -228,26 +247,41 @@ export async function scrapeAutoScout(
     });
     const browserPage = await context.newPage();
     const allListings: CarListing[] = [];
+    let cookiesDismissed = false;
 
-    for (let page = 1; page <= maxPages; page++) {
-      const url = buildUrl(make, model, geo, radius, page, filters);
-      console.log(`[autoscout] Page ${page}: ${url}`);
+    for (const target of targets) {
+      console.log(`[autoscout] Target: ${target.label}`);
 
-      await browserPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      if (page === 1) await dismissCookies(browserPage);
-      await browserPage.waitForTimeout(1500);
+      for (let page = 1; page <= maxPages; page++) {
+        const url = buildUrl(make, model, target.geo, target.radius, page, filters);
+        console.log(`[autoscout] Page ${page}: ${url}`);
 
-      const pageListings = await scrapePage(browserPage);
-      if (pageListings.length === 0) {
-        console.log(`[autoscout] No listings on page ${page}, stopping.`);
-        break;
+        await browserPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        if (!cookiesDismissed) {
+          await dismissCookies(browserPage);
+          cookiesDismissed = true;
+        }
+        await browserPage.waitForTimeout(1500);
+
+        const pageListings = await scrapePage(browserPage);
+        if (pageListings.length === 0) {
+          console.log(`[autoscout] No listings on page ${page} for ${target.label}, stopping target.`);
+          break;
+        }
+
+        allListings.push(...pageListings);
       }
-
-      allListings.push(...pageListings);
     }
 
-    console.log(`[autoscout] Found ${allListings.length} listings total`);
-    return allListings;
+    const seen = new Set<string>();
+    const unique = allListings.filter((listing) => {
+      if (seen.has(listing.originalUrl)) return false;
+      seen.add(listing.originalUrl);
+      return true;
+    });
+
+    console.log(`[autoscout] Found ${unique.length} unique listings total`);
+    return unique;
   } catch (err) {
     console.error('[autoscout] Scraping error:', err);
     throw err;

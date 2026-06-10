@@ -63,6 +63,8 @@ type SearchRequestParams = {
   yearFrom: string;
   yearTo: string;
   kmMax: string;
+  priceFrom: string;
+  priceTo: string;
   fuel: string;
 };
 
@@ -77,6 +79,8 @@ function ResultsView({
   yearFrom,
   yearTo,
   kmMax,
+  priceFrom,
+  priceTo,
   fuel,
 }: SearchRequestParams) {
   const router = useRouter();
@@ -110,6 +114,8 @@ function ResultsView({
     if (yearFrom) params.set("yearFrom", yearFrom);
     if (yearTo) params.set("yearTo", yearTo);
     if (kmMax) params.set("kmMax", kmMax);
+    if (priceFrom) params.set("priceFrom", priceFrom);
+    if (priceTo) params.set("priceTo", priceTo);
     if (fuel) params.set("fuel", fuel);
 
     const controller = new AbortController();
@@ -142,7 +148,7 @@ function ResultsView({
       });
 
     return () => controller.abort();
-  }, [make, model, location, locationType, radius, page, sort, yearFrom, yearTo, kmMax, fuel]);
+  }, [make, model, location, locationType, radius, page, sort, yearFrom, yearTo, kmMax, priceFrom, priceTo, fuel]);
 
   function updateParams(overrides: Record<string, string>) {
     const params = new URLSearchParams({ make, model, radius, page: "1", sort });
@@ -151,6 +157,8 @@ function ResultsView({
     if (yearFrom) params.set("yearFrom", yearFrom);
     if (yearTo) params.set("yearTo", yearTo);
     if (kmMax) params.set("kmMax", kmMax);
+    if (priceFrom) params.set("priceFrom", priceFrom);
+    if (priceTo) params.set("priceTo", priceTo);
     if (fuel) params.set("fuel", fuel);
     for (const [k, v] of Object.entries(overrides)) params.set(k, v);
     router.push(`/results?${params.toString()}`);
@@ -195,7 +203,7 @@ function ResultsView({
             className="overflow-hidden bg-white border-b border-slate-200/60"
           >
             <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5">
-              <SearchForm initialValues={{ make, model, location, radius, yearFrom, yearTo, kmMax, fuel }} />
+              <SearchForm initialValues={{ make, model, location, radius, yearFrom, yearTo, kmMax, priceFrom, priceTo, fuel }} />
             </div>
           </motion.div>
         )}
@@ -356,7 +364,7 @@ function ResultsView({
                   </p>
                 )}
                 {/* Active filters chips */}
-                {(yearFrom || yearTo || kmMax || fuel) && (
+                {(yearFrom || yearTo || kmMax || priceFrom || priceTo || fuel) && (
                   <div className="flex flex-wrap gap-1.5 mt-1.5">
                     {yearFrom && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 text-xs text-blue-700 font-medium">
@@ -371,6 +379,16 @@ function ResultsView({
                     {kmMax && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 text-xs text-blue-700 font-medium">
                         Max {Number(kmMax).toLocaleString("it-IT")} km
+                      </span>
+                    )}
+                    {priceFrom && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 text-xs text-blue-700 font-medium">
+                        Da € {Number(priceFrom).toLocaleString("it-IT")}
+                      </span>
+                    )}
+                    {priceTo && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 text-xs text-blue-700 font-medium">
+                        Fino a € {Number(priceTo).toLocaleString("it-IT")}
                       </span>
                     )}
                     {fuel && (
@@ -457,6 +475,8 @@ function ResultsContent() {
     yearFrom: searchParams.get("yearFrom") ?? "",
     yearTo: searchParams.get("yearTo") ?? "",
     kmMax: searchParams.get("kmMax") ?? "",
+    priceFrom: searchParams.get("priceFrom") ?? "",
+    priceTo: searchParams.get("priceTo") ?? "",
     fuel: searchParams.get("fuel") ?? "",
   };
 
@@ -471,6 +491,8 @@ function ResultsContent() {
     params.yearFrom,
     params.yearTo,
     params.kmMax,
+    params.priceFrom,
+    params.priceTo,
     params.fuel,
   ].join("|");
 

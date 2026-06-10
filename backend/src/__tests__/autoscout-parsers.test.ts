@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parsePrice, parseDateAndMileage, parseFuel, extractCity } from '../scrapers/autoscout.js';
+import { buildUrl, parsePrice, parseDateAndMileage, parseFuel, extractCity } from '../scrapers/autoscout.js';
 
 describe('parsePrice', () => {
   it('parses Italian formatted price', () => {
@@ -76,8 +76,8 @@ describe('parseFuel', () => {
 
 describe('extractCity', () => {
   it('extracts city from AutoScout format', () => {
-    expect(extractCity('IT-20100 Milano - Lombardia - MI')).toBe('Milano');
-    expect(extractCity('IT-00100 Roma - Lazio - RM')).toBe('Roma');
+    expect(extractCity('IT-20100 Milano - Lombardia - MI')).toBe('Milano (MI)');
+    expect(extractCity('IT-00100 Roma - Lazio - RM')).toBe('Roma (RM)');
   });
 
   it('extracts city from simple format', () => {
@@ -87,5 +87,17 @@ describe('extractCity', () => {
   it('returns null for unrecognized format', () => {
     expect(extractCity('somewhere')).toBeNull();
     expect(extractCity('')).toBeNull();
+  });
+});
+
+describe('buildUrl', () => {
+  it('adds price range filters to AutoScout URL', () => {
+    const url = buildUrl('BMW', 'Serie 3', null, 100, 1, {
+      priceFrom: 15000,
+      priceTo: 30000,
+    });
+
+    expect(url).toContain('pricefrom=15000');
+    expect(url).toContain('priceto=30000');
   });
 });

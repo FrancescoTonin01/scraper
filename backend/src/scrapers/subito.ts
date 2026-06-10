@@ -234,6 +234,12 @@ export async function scrapeSubito(
     if (filters.kmMax) {
       filtered = filtered.filter((l) => l.mileage != null && l.mileage <= filters.kmMax!);
     }
+    if (filters.priceFrom) {
+      filtered = filtered.filter((l) => l.price != null && l.price >= filters.priceFrom!);
+    }
+    if (filters.priceTo) {
+      filtered = filtered.filter((l) => l.price != null && l.price <= filters.priceTo!);
+    }
     if (filters.fuel) {
       const fuelLower = filters.fuel.toLowerCase();
       filtered = filtered.filter((l) => {

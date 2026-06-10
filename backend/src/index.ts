@@ -2,12 +2,12 @@ import express from 'express';
 import cors from 'cors';
 import { z } from 'zod';
 import { PrismaClient } from '@prisma/client';
-import { scrapeAutoScout } from './scrapers/autoscout.js';
+import { scrapeAutoScout, scrapeAutoScoutTargets, type AutoScoutSearchTarget } from './scrapers/autoscout.js';
 import { scrapeSubito } from './scrapers/subito.js';
 import { geocodeCity } from './utils/geocode.js';
 import { isValidMake, isValidModelForMake } from './data/makes.js';
-import { isValidLocation, isCityInRegion } from './data/locations.js';
-import type { CarListing, SearchResponse } from './types.js';
+import { isValidLocation, isCityInRegion, getProvincesForRegion } from './data/locations.js';
+import type { CarListing, GeoResult, SearchFilters, SearchResponse } from './types.js';
 
 const prisma = new PrismaClient();
 const app = express();
@@ -29,9 +29,29 @@ type CacheEntry = {
 const searchCache = new Map<string, CacheEntry>();
 const CACHE_TTL = 15 * 60 * 1000; // 15 minutes
 const MAX_PAGES_PER_SOURCE = 3;
+const REGION_AUTOSCOUT_RADIUS_KM = 100;
 
-function getCacheKey(make: string, model: string, location?: string, radius?: number, yearFrom?: number, yearTo?: number, kmMax?: number, fuel?: string): string {
-  return `${make}|${model}|${location ?? ''}|${radius ?? 100}|${yearFrom ?? ''}|${yearTo ?? ''}|${kmMax ?? ''}|${fuel ?? ''}`.toLowerCase();
+function getCacheKey(
+  make: string,
+  model: string,
+  location?: string,
+  locationType?: string,
+  radius?: number,
+  filters?: SearchFilters,
+): string {
+  return [
+    make,
+    model,
+    location ?? '',
+    locationType ?? '',
+    radius ?? 100,
+    filters?.yearFrom ?? '',
+    filters?.yearTo ?? '',
+    filters?.kmMax ?? '',
+    filters?.priceFrom ?? '',
+    filters?.priceTo ?? '',
+    filters?.fuel ?? '',
+  ].join('|').toLowerCase();
 }
 
 function cleanExpiredCache(): void {
@@ -65,6 +85,36 @@ function sortListings(listings: CarListing[], sort: SortOption): CarListing[] {
   }
 }
 
+function dedupeListings(listings: CarListing[]): CarListing[] {
+  const seen = new Set<string>();
+  return listings.filter((listing) => {
+    if (seen.has(listing.originalUrl)) return false;
+    seen.add(listing.originalUrl);
+    return true;
+  });
+}
+
+async function getRegionAutoScoutTargets(region: string): Promise<AutoScoutSearchTarget[]> {
+  const provinces = getProvincesForRegion(region);
+  const targets: AutoScoutSearchTarget[] = [];
+
+  for (const province of provinces) {
+    const geo = await geocodeCity(province);
+    if (!geo?.postcode) {
+      console.log(`[search] Could not geocode province "${province}" for AutoScout region search`);
+      continue;
+    }
+
+    targets.push({
+      label: `${province} (${geo.postcode})`,
+      geo,
+      radius: REGION_AUTOSCOUT_RADIUS_KM,
+    });
+  }
+
+  return targets;
+}
+
 const searchSchema = z.object({
   make: z.string().min(1, 'make is required'),
   model: z.string().min(1, 'model is required'),
@@ -77,7 +127,12 @@ const searchSchema = z.object({
   yearFrom: z.coerce.number().min(1900).max(2030).optional(),
   yearTo: z.coerce.number().min(1900).max(2030).optional(),
   kmMax: z.coerce.number().min(0).optional(),
+  priceFrom: z.coerce.number().min(0).optional(),
+  priceTo: z.coerce.number().min(0).optional(),
   fuel: z.string().optional(),
+}).refine((data) => data.priceFrom == null || data.priceTo == null || data.priceFrom <= data.priceTo, {
+  message: 'priceFrom must be less than or equal to priceTo',
+  path: ['priceTo'],
 });
 
 app.get('/api/search', async (req, res) => {
@@ -90,7 +145,7 @@ app.get('/api/search', async (req, res) => {
     return;
   }
 
-  const { make, model, location, locationType, radius, page, pageSize, sort, yearFrom, yearTo, kmMax, fuel } = parsed.data;
+  const { make, model, location, locationType, radius, page, pageSize, sort, yearFrom, yearTo, kmMax, priceFrom, priceTo, fuel } = parsed.data;
 
   // Validate make/model/location against known data
   if (!isValidMake(make)) {
@@ -107,10 +162,10 @@ app.get('/api/search', async (req, res) => {
   }
 
   const isRegionSearch = locationType === 'region';
-  console.log(`\n[search] make=${make} model=${model} location=${location ?? 'Tutta Italia'} type=${locationType ?? 'auto'} radius=${isRegionSearch ? 'N/A' : radius + 'km'} page=${page} sort=${sort} yearFrom=${yearFrom ?? '-'} yearTo=${yearTo ?? '-'} kmMax=${kmMax ?? '-'} fuel=${fuel ?? '-'}`);
+  console.log(`\n[search] make=${make} model=${model} location=${location ?? 'Tutta Italia'} type=${locationType ?? 'auto'} radius=${isRegionSearch ? 'N/A' : radius + 'km'} page=${page} sort=${sort} yearFrom=${yearFrom ?? '-'} yearTo=${yearTo ?? '-'} kmMax=${kmMax ?? '-'} priceFrom=${priceFrom ?? '-'} priceTo=${priceTo ?? '-'} fuel=${fuel ?? '-'}`);
 
   // Geocode location if provided
-  let geo = null;
+  let geo: GeoResult | null = null;
   if (location) {
     geo = await geocodeCity(location);
     if (geo) {
@@ -121,7 +176,8 @@ app.get('/api/search', async (req, res) => {
   }
 
   // Check cache
-  const cacheKey = getCacheKey(make, model, location, radius, yearFrom, yearTo, kmMax, fuel);
+  const filters = { yearFrom, yearTo, kmMax, priceFrom, priceTo, fuel };
+  const cacheKey = getCacheKey(make, model, location, locationType, radius, filters);
   const cached = searchCache.get(cacheKey);
 
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
@@ -145,11 +201,18 @@ app.get('/api/search', async (req, res) => {
 
   // Run scrapers in parallel, each scraping multiple pages
   const warnings: string[] = [];
-  const filters = { yearFrom, yearTo, kmMax, fuel };
-  // For region searches, pass null geo to AutoScout (no zip/radius filtering)
-  const autoscoutGeo = isRegionSearch ? null : geo;
+  const autoscoutPromise = isRegionSearch && location
+    ? getRegionAutoScoutTargets(location).then((targets) => {
+        if (targets.length === 0) {
+          console.log('[search] No province targets for AutoScout region search, falling back to all Italy');
+          return scrapeAutoScout(make, model, null, radius, MAX_PAGES_PER_SOURCE, filters);
+        }
+        return scrapeAutoScoutTargets(make, model, targets, MAX_PAGES_PER_SOURCE, filters);
+      })
+    : scrapeAutoScout(make, model, geo, radius, MAX_PAGES_PER_SOURCE, filters);
+
   const [autoscoutResult, subitoResult] = await Promise.allSettled([
-    scrapeAutoScout(make, model, autoscoutGeo, radius, MAX_PAGES_PER_SOURCE, filters),
+    autoscoutPromise,
     scrapeSubito(make, model, geo, MAX_PAGES_PER_SOURCE, filters),
   ]);
 
@@ -185,7 +248,10 @@ app.get('/api/search', async (req, res) => {
       if (!l.city) return false;
       return isCityInRegion(l.city, location);
     });
+    allListings = dedupeListings(allListings);
     console.log(`[search] Region post-filter: ${before} → ${allListings.length} listings (region: ${location})`);
+  } else {
+    allListings = dedupeListings(allListings);
   }
 
   // Store in cache
