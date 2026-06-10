@@ -11,6 +11,8 @@ type SlugOverride = {
   subito?: string;
 };
 
+type TokenSequence = string[];
+
 const SLUG_OVERRIDES: Record<string, Record<string, SlugOverride>> = {
   bmw: {
     // Series-level models — AutoScout requires "(tutto)" suffix
@@ -114,6 +116,147 @@ export function getModelSlug(make: string, model: string, source: 'autoscout' | 
 
   // Default naive conversion
   return model.toLowerCase().replace(/\s+/g, '-');
+}
+
+function normalizeText(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function tokenize(value: string): string[] {
+  const normalized = normalizeText(value);
+  return normalized ? normalized.split(/\s+/) : [];
+}
+
+function tokenMatches(token: string, expected: string): boolean {
+  if (token === expected) return true;
+  if (/^\d+$/.test(expected)) return new RegExp(`^${expected}[a-z]+$`).test(token);
+  if (/^[a-z]{1,4}$/.test(expected)) return new RegExp(`^${expected}\\d+[a-z]*$`).test(token);
+  return false;
+}
+
+function hasSubsequence(tokens: string[], sequence: TokenSequence): boolean {
+  if (sequence.length === 0 || sequence.length > tokens.length) return false;
+
+  for (let i = 0; i <= tokens.length - sequence.length; i++) {
+    let matches = true;
+    for (let j = 0; j < sequence.length; j++) {
+      if (!tokenMatches(tokens[i + j], sequence[j])) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) return true;
+  }
+
+  return false;
+}
+
+function bmwSeriesForNumericModel(modelLower: string): string | null {
+  const bmwOverrides = SLUG_OVERRIDES.bmw;
+  const subitoSlug = bmwOverrides?.[modelLower]?.subito;
+  const match = subitoSlug?.match(/^serie-(\d)$/);
+  return match?.[1] ?? null;
+}
+
+function bmwNumericModelsForSeries(series: string): string[] {
+  return Object.entries(SLUG_OVERRIDES.bmw ?? {})
+    .filter(([, override]) => override.subito === `serie-${series}`)
+    .map(([model]) => model);
+}
+
+function porscheVariantSequences(modelLower: string): TokenSequence[] {
+  const tokens = tokenize(modelLower);
+  const variantTokens = tokens.filter((token) => token !== 'tutto');
+
+  if (variantTokens.length === 0) return [];
+
+  // Keep parent searches broad, but variant searches must contain the variant
+  // tokens (e.g. "911 gt3"), otherwise a parent URL would leak every 911.
+  return [variantTokens];
+}
+
+function acceptedModelSequences(make: string, model: string): TokenSequence[] {
+  const makeSlug = getMakeSlug(make);
+  const modelLower = normalizeText(model);
+  const baseTokens = tokenize(model);
+  const sequences: TokenSequence[] = [];
+
+  if (baseTokens.length > 0) sequences.push(baseTokens);
+
+  if (makeSlug === 'bmw') {
+    const seriesMatch = modelLower.match(/^serie\s+(\d)$/);
+    if (seriesMatch) {
+      const series = seriesMatch[1];
+      sequences.push(...bmwNumericModelsForSeries(series).map((numericModel) => [numericModel]));
+    } else {
+      const series = bmwSeriesForNumericModel(modelLower);
+      if (series) {
+        // Accept a generic parent-series title only when it does not expose a
+        // sibling engine code. If a title says "320", it should not satisfy "318".
+        sequences.push(['serie', series]);
+      }
+    }
+  }
+
+  if (makeSlug === 'mercedes-benz') {
+    const classMatch = modelLower.match(/^classe\s+([a-z])$/);
+    if (classMatch) {
+      sequences.push([classMatch[1]]);
+    }
+  }
+
+  if (makeSlug === 'porsche') {
+    sequences.push(...porscheVariantSequences(modelLower));
+  }
+
+  const seen = new Set<string>();
+  return sequences.filter((sequence) => {
+    const key = sequence.join('\u0000');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function hasKnownBmwSiblingCode(tokens: string[], requestedModel: string): boolean {
+  const requestedLower = normalizeText(requestedModel);
+  const series = bmwSeriesForNumericModel(requestedLower);
+  if (!series) return false;
+
+  return bmwNumericModelsForSeries(series).some((numericModel) => {
+    return numericModel !== requestedLower && tokens.some((token) => tokenMatches(token, numericModel));
+  });
+}
+
+/**
+ * Returns true when a scraped title is relevant to the requested make/model.
+ * Matching is token-based on normalized text, so short model codes such as
+ * CLA/CLE/EQA only match whole tokens and do not bleed into similar codes.
+ */
+export function isListingRelevantToModel(make: string, model: string, title: string): boolean {
+  const titleTokens = tokenize(title);
+  if (titleTokens.length === 0) return false;
+
+  const makeSlug = getMakeSlug(make);
+  const modelLower = normalizeText(model);
+  const sequences = acceptedModelSequences(make, model);
+
+  for (const sequence of sequences) {
+    if (!hasSubsequence(titleTokens, sequence)) continue;
+
+    if (makeSlug === 'bmw' && bmwSeriesForNumericModel(modelLower) && sequence[0] === 'serie') {
+      return !hasKnownBmwSiblingCode(titleTokens, model);
+    }
+
+    return true;
+  }
+
+  return false;
 }
 
 /**

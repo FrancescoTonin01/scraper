@@ -1,5 +1,5 @@
 import type { CarListing, GeoResult, SearchFilters } from '../types.js';
-import { getMakeSlug, getModelSlug } from '../data/modelSlugs.js';
+import { getMakeSlug, getModelSlug, isListingRelevantToModel } from '../data/modelSlugs.js';
 
 // Map Italian region names (from Nominatim) to Subito URL slugs
 const REGION_SLUGS: Record<string, string> = {
@@ -216,9 +216,7 @@ export async function scrapeSubito(
   if (allListings.length === 0) {
     console.log(`[subito] Model path returned 0 results, retrying with ?q=${model} fallback...`);
     const fallbackListings = await fetchSubitoPages(buildFallbackUrl, make, model, geo, maxPages);
-    // Filter by model name in title to avoid false positives
-    const modelLower = model.toLowerCase();
-    allListings = fallbackListings.filter((l) => l.title.toLowerCase().includes(modelLower));
+    allListings = fallbackListings.filter((l) => isListingRelevantToModel(make, model, l.title));
     console.log(`[subito] Fallback found ${fallbackListings.length} total, ${allListings.length} matching "${model}"`);
   }
 
