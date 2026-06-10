@@ -19,6 +19,7 @@ import CarCard from "@/components/CarCard";
 import CarCardSkeleton from "@/components/CarCardSkeleton";
 import Pagination from "@/components/Pagination";
 import AlertBanner from "@/components/AlertBanner";
+import { appendCurrentUtmParams, getMarketingEventProps } from "@/utils/marketing";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -132,6 +133,8 @@ function ResultsView({
             make,
             model,
             total: json.total,
+            location: location || "Tutta Italia",
+            ...getMarketingEventProps(),
           });
         }
       })
@@ -153,6 +156,7 @@ function ResultsView({
     if (kmMax) params.set("kmMax", kmMax);
     if (fuel) params.set("fuel", fuel);
     for (const [k, v] of Object.entries(overrides)) params.set(k, v);
+    appendCurrentUtmParams(params);
     router.push(`/results?${params.toString()}`);
   }
 
