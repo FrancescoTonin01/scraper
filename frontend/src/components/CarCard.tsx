@@ -1,4 +1,5 @@
 import SourceBadge from "./SourceBadge";
+import { getMarketingEventProps } from "@/utils/marketing";
 
 type CarListing = {
   source: "autoscout" | "subito";
@@ -36,6 +37,7 @@ export default function CarCard({ listing }: { listing: CarListing }) {
         source: listing.source,
         title: listing.title,
         price: listing.price ?? 0,
+        ...getMarketingEventProps(),
       });
     }
   }

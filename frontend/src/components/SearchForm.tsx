@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import Combobox from "./Combobox";
 import { getMakeNames, getModelsForMake, getGroupedModelsForMake } from "@/data/carMakesModels";
 import { getLocationOptions, extractLocationName, isRegion, resolveLocationInput } from "@/data/italianLocations";
+import { appendCurrentUtmParams } from "@/utils/marketing";
 
 const RADIUS_OPTIONS = [25, 50, 100, 200, 500];
 
@@ -140,6 +141,7 @@ export default function SearchForm({
     if (yearTo) params.set("yearTo", yearTo);
     if (kmMax) params.set("kmMax", kmMax);
     if (fuel) params.set("fuel", fuel);
+    appendCurrentUtmParams(params);
 
     router.push(`/results?${params.toString()}`);
   }

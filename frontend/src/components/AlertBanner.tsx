@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { getMarketingEventProps } from "@/utils/marketing";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -35,6 +36,17 @@ export default function AlertBanner({
 
   if (dismissed) return null;
 
+  function handleDismiss() {
+    setDismissed(true);
+    if (typeof window !== "undefined" && typeof window.umami !== "undefined") {
+      window.umami.track("alert-dismissed", {
+        make,
+        model,
+        ...getMarketingEventProps(),
+      });
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!email.trim() || state === "submitting") return;
@@ -65,7 +77,12 @@ export default function AlertBanner({
       setMessage(data.message);
 
       if (typeof window !== "undefined" && typeof window.umami !== "undefined") {
-        window.umami.track("alert-subscribed", { make, model });
+        window.umami.track("alert-subscribed", {
+          make,
+          model,
+          location: location ?? "Tutta Italia",
+          ...getMarketingEventProps(),
+        });
       }
     } catch (err) {
       setState("error");
@@ -81,7 +98,7 @@ export default function AlertBanner({
       className="relative w-full min-w-0 max-w-full overflow-hidden bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/60 rounded-xl sm:rounded-2xl p-4 sm:p-5 mb-6"
     >
       <button
-        onClick={() => setDismissed(true)}
+        onClick={handleDismiss}
         className="absolute top-3 right-3 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
         aria-label="Chiudi"
       >
@@ -113,10 +130,10 @@ export default function AlertBanner({
               </div>
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-slate-800">
-                  Ricevi alert per {make} {model}
+                  Vuoi aggiornamenti su {make} {model}?
                 </p>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Ti avviseremo quando appariranno nuovi annunci per questa ricerca.
+                  Lascia l&apos;email: salviamo questa ricerca e ti avvisiamo quando attiviamo gli alert.
                 </p>
               </div>
             </div>
@@ -137,9 +154,12 @@ export default function AlertBanner({
                 disabled={state === "submitting"}
                 className="w-full px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 transition-colors cursor-pointer shrink-0 sm:w-auto"
               >
-                {state === "submitting" ? "..." : "Attiva"}
+                {state === "submitting" ? "..." : "Salva ricerca"}
               </button>
             </form>
+            <p className="text-[11px] leading-relaxed text-slate-400 mt-2">
+              Niente spam: useremo l&apos;email solo per aggiornamenti su AutoRadar e sugli alert.
+            </p>
             {state === "error" && (
               <p className="text-xs text-red-600 mt-2">{message}</p>
             )}

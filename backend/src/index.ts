@@ -8,6 +8,7 @@ import { geocodeCity } from './utils/geocode.js';
 import { isValidMake, isValidModelForMake } from './data/makes.js';
 import { isValidLocation, isCityInRegion } from './data/locations.js';
 import { isListingRelevantToModel } from './data/modelSlugs.js';
+import { buildAlertLookup, buildAlertSegmentKey, escapeCsvValue } from './utils/marketing.js';
 import type { CarListing, SearchResponse } from './types.js';
 
 const prisma = new PrismaClient();
@@ -279,7 +280,7 @@ app.post('/api/alerts', async (req, res) => {
     return;
   }
 
-  const data = parsed.data;
+  const data = buildAlertLookup(parsed.data);
 
   const existing = await prisma.alertSubscription.findFirst({
     where: {
@@ -287,18 +288,23 @@ app.post('/api/alerts', async (req, res) => {
       make: data.make,
       model: data.model,
       location: data.location ?? null,
+      radius: data.radius ?? null,
+      yearFrom: data.yearFrom ?? null,
+      yearTo: data.yearTo ?? null,
+      kmMax: data.kmMax ?? null,
+      fuel: data.fuel ?? null,
       active: true,
     },
   });
 
   if (existing) {
-    res.json({ message: 'Sei già iscritto a questo alert.' });
+    res.json({ message: 'Hai già salvato questa ricerca.' });
     return;
   }
 
   await prisma.alertSubscription.create({ data });
   console.log(`[alert] New subscription: ${data.email} → ${data.make} ${data.model}`);
-  res.status(201).json({ message: 'Alert attivato! Ti avviseremo quando ci saranno nuovi annunci.' });
+  res.status(201).json({ message: 'Ricerca salvata. Ti avviseremo quando attiveremo gli alert.' });
 });
 
 // --------------- Feedback ---------------
@@ -351,13 +357,66 @@ app.get('/api/admin/feedback', requireAdmin, async (_req, res) => {
 app.get('/api/admin/alerts', requireAdmin, async (_req, res) => {
   const alerts = await prisma.alertSubscription.findMany({
     orderBy: { createdAt: 'desc' },
-    take: 100,
+    take: 500,
   });
+  const segments = new Map<string, { make: string; model: string; location: string; count: number }>();
+
+  for (const alert of alerts) {
+    const location = alert.location ?? 'Tutta Italia';
+    const key = buildAlertSegmentKey({ make: alert.make, model: alert.model, location });
+    const current = segments.get(key);
+    if (current) {
+      current.count += 1;
+    } else {
+      segments.set(key, {
+        make: alert.make,
+        model: alert.model,
+        location,
+        count: 1,
+      });
+    }
+  }
+
   const stats = {
     total: alerts.length,
     uniqueEmails: new Set(alerts.map((a) => a.email)).size,
+    active: alerts.filter((a) => a.active).length,
+    topSegments: [...segments.values()]
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10),
   };
   res.json({ stats, alerts });
+});
+
+app.get('/api/admin/alerts.csv', requireAdmin, async (_req, res) => {
+  const alerts = await prisma.alertSubscription.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: 5000,
+  });
+
+  const headers = ['createdAt', 'email', 'make', 'model', 'location', 'radius', 'yearFrom', 'yearTo', 'kmMax', 'fuel', 'active'];
+  const rows = alerts.map((alert) => [
+    alert.createdAt.toISOString(),
+    alert.email,
+    alert.make,
+    alert.model,
+    alert.location ?? '',
+    alert.radius ?? '',
+    alert.yearFrom ?? '',
+    alert.yearTo ?? '',
+    alert.kmMax ?? '',
+    alert.fuel ?? '',
+    alert.active,
+  ]);
+
+  const csv = [
+    headers.join(','),
+    ...rows.map((row) => row.map(escapeCsvValue).join(',')),
+  ].join('\n');
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="autoradar-alerts.csv"');
+  res.send(csv);
 });
 
 app.listen(PORT, () => {
