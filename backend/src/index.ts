@@ -7,6 +7,7 @@ import { scrapeSubito } from './scrapers/subito.js';
 import { geocodeCity } from './utils/geocode.js';
 import { isValidMake, isValidModelForMake } from './data/makes.js';
 import { isValidLocation, isCityInRegion } from './data/locations.js';
+import { isListingRelevantToModel } from './data/modelSlugs.js';
 import type { CarListing, SearchResponse } from './types.js';
 
 const prisma = new PrismaClient();
@@ -63,6 +64,39 @@ function sortListings(listings: CarListing[], sort: SortOption): CarListing[] {
     default:
       return sorted;
   }
+}
+
+function normalizeDedupeText(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function dedupeListings(listings: CarListing[]): CarListing[] {
+  const seenUrls = new Set<string>();
+  const seenFingerprints = new Set<string>();
+
+  return listings.filter((listing) => {
+    if (seenUrls.has(listing.originalUrl)) return false;
+    seenUrls.add(listing.originalUrl);
+
+    const title = normalizeDedupeText(listing.title);
+    const city = normalizeDedupeText(listing.city ?? '');
+    const fingerprint = [
+      title,
+      listing.price ?? '',
+      listing.year ?? '',
+      listing.mileage ?? '',
+      city,
+    ].join('|');
+
+    if (seenFingerprints.has(fingerprint)) return false;
+    seenFingerprints.add(fingerprint);
+    return true;
+  });
 }
 
 const searchSchema = z.object({
@@ -187,6 +221,14 @@ app.get('/api/search', async (req, res) => {
     });
     console.log(`[search] Region post-filter: ${before} → ${allListings.length} listings (region: ${location})`);
   }
+
+  const beforeRelevance = allListings.length;
+  allListings = allListings.filter((l) => isListingRelevantToModel(make, model, l.title));
+  console.log(`[search] Model relevance filter: ${beforeRelevance} → ${allListings.length} listings (${make} ${model})`);
+
+  const beforeDedupe = allListings.length;
+  allListings = dedupeListings(allListings);
+  console.log(`[search] Cross-source dedupe: ${beforeDedupe} → ${allListings.length} listings`);
 
   // Store in cache
   searchCache.set(cacheKey, { listings: allListings, timestamp: Date.now(), warnings });

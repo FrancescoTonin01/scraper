@@ -46,7 +46,7 @@ export default function CarCard({ listing }: { listing: CarListing }) {
       target="_blank"
       rel="noopener noreferrer"
       onClick={handleClick}
-      className={`group flex flex-col h-full bg-white rounded-2xl shadow-sm shadow-slate-200/60 border border-slate-100 overflow-hidden transition-all duration-300 hover:shadow-lg hover:shadow-slate-200/80 hover:-translate-y-1 hover:border-slate-200 ${accentClass}`}
+      className={`group flex w-full min-w-0 max-w-full flex-col h-full bg-white rounded-xl sm:rounded-2xl shadow-sm shadow-slate-200/60 border border-slate-100 overflow-hidden transition-all duration-300 hover:shadow-lg hover:shadow-slate-200/80 hover:-translate-y-1 hover:border-slate-200 ${accentClass}`}
     >
       {/* Image */}
       <div className="relative aspect-[16/10] bg-slate-100 overflow-hidden">
@@ -70,21 +70,21 @@ export default function CarCard({ listing }: { listing: CarListing }) {
           <SourceBadge source={listing.source} />
         </div>
         {/* Price badge on image */}
-        <div className="absolute bottom-2.5 right-2.5">
-          <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-white/95 backdrop-blur-sm text-base font-bold text-slate-900 shadow-sm">
+        <div className="absolute bottom-2.5 right-2.5 left-2.5 flex justify-end">
+          <span className="inline-flex max-w-full items-center truncate px-2.5 py-1 rounded-lg bg-white/95 backdrop-blur-sm text-base font-bold text-slate-900 shadow-sm">
             {formatPrice(listing.price)}
           </span>
         </div>
       </div>
 
       {/* Content */}
-      <div className="p-4 flex-1 flex flex-col space-y-2.5">
+      <div className="min-w-0 p-4 flex-1 flex flex-col space-y-2.5">
         <h3 className="font-semibold text-slate-900 line-clamp-1 text-sm leading-snug tracking-tight">
           {listing.title}
         </h3>
 
         {/* Info pills */}
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex min-w-0 flex-wrap gap-1.5">
           {listing.year && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-xs text-slate-600 font-medium">
               <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

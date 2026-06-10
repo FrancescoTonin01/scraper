@@ -194,14 +194,14 @@ function ResultsView({
             transition={{ duration: 0.25 }}
             className="overflow-hidden bg-white border-b border-slate-200/60"
           >
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5">
+            <div className="max-w-7xl mx-auto px-3 sm:px-6 py-5 overflow-x-clip">
               <SearchForm initialValues={{ make, model, location, radius, yearFrom, yearTo, kmMax, fuel }} />
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <div className="max-w-7xl mx-auto px-2 sm:px-6 py-4 sm:py-6">
+      <div className="max-w-7xl mx-auto w-full min-w-0 overflow-x-clip px-3 sm:px-6 py-4 sm:py-6">
         {/* Warnings */}
         {data?.warnings && data.warnings.length > 0 && (
           <motion.div
@@ -291,9 +291,9 @@ function ResultsView({
                 ))}
               </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="grid w-full min-w-0 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {Array.from({ length: 12 }).map((_, i) => (
-                <div key={i} style={{ animationDelay: `${i * 75}ms` }} className="animate-pulse">
+                <div key={i} style={{ animationDelay: `${i * 75}ms` }} className="animate-pulse min-w-0">
                   <CarCardSkeleton />
                 </div>
               ))}
@@ -341,8 +341,8 @@ function ResultsView({
             />
 
             {/* Results header + sort */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
-              <div>
+            <div className="flex min-w-0 flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+              <div className="min-w-0">
                 <h1 className="text-lg font-semibold text-slate-900">
                   <span className="text-blue-600">{data.total}</span>{" "}
                   risultati per{" "}
@@ -382,15 +382,15 @@ function ResultsView({
                 )}
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex w-full min-w-0 items-center gap-3 sm:w-auto">
                 <span className="text-xs text-slate-400 hidden sm:inline">
                   Pagina {data.page} di {data.totalPages}
                 </span>
-                <div className="relative">
+                <div className="relative w-full sm:w-auto">
                   <select
                     value={sort}
                     onChange={(e) => handleSortChange(e.target.value)}
-                    className="appearance-none bg-white border border-slate-200 rounded-xl pl-3 pr-8 py-2 text-sm text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer hover:border-slate-300 transition-colors"
+                    className="w-full appearance-none bg-white border border-slate-200 rounded-xl pl-3 pr-8 py-2 text-sm text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer hover:border-slate-300 transition-colors"
                   >
                     {SORT_OPTIONS.map((opt) => (
                       <option key={opt.value} value={opt.value}>
@@ -409,7 +409,7 @@ function ResultsView({
 
             {/* Card grid with staggered animation */}
             <motion.div
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
+              className="grid w-full min-w-0 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
               initial="hidden"
               animate="show"
               variants={{
@@ -420,6 +420,7 @@ function ResultsView({
               {data.results.map((listing, i) => (
                 <motion.div
                   key={`${listing.source}-${listing.originalUrl}-${i}`}
+                  className="min-w-0 w-full"
                   variants={{
                     hidden: { opacity: 0, y: 12 },
                     show: { opacity: 1, y: 0 },
