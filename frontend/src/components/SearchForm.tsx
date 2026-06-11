@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import Combobox from "./Combobox";
 import { getMakeNames, getModelsForMake, getGroupedModelsForMake } from "@/data/carMakesModels";
 import { getLocationOptions, extractLocationName, isRegion, resolveLocationInput } from "@/data/italianLocations";
+import { appendCurrentUtmParams } from "@/utils/marketing";
 
 const RADIUS_OPTIONS = [25, 50, 100, 200, 500];
 
@@ -151,14 +152,15 @@ export default function SearchForm({
     if (priceFrom) params.set("priceFrom", priceFrom);
     if (priceTo) params.set("priceTo", priceTo);
     if (fuel) params.set("fuel", fuel);
+    appendCurrentUtmParams(params);
 
     router.push(`/results?${params.toString()}`);
   }
 
   return (
-    <form onSubmit={handleSubmit} className="w-full max-w-2xl mx-auto">
-      <div className="bg-white rounded-2xl shadow-lg shadow-slate-200/60 border border-slate-100 p-5 sm:p-7 space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+    <form onSubmit={handleSubmit} className="w-full max-w-2xl mx-auto min-w-0">
+      <div className="w-full min-w-0 max-w-full overflow-visible bg-white rounded-xl sm:rounded-2xl shadow-lg shadow-slate-200/60 border border-slate-100 p-4 sm:p-7 space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-0">
           <Combobox
             id="make"
             label="Marca"
@@ -193,7 +195,7 @@ export default function SearchForm({
           />
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-0">
           <Combobox
             id="location"
             label="Località"
@@ -211,7 +213,7 @@ export default function SearchForm({
           />
 
           {!isLocationRegion && (
-          <div>
+          <div className="min-w-0">
             <label
               htmlFor="radius"
               className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5"
@@ -228,7 +230,7 @@ export default function SearchForm({
                 id="radius"
                 value={radius}
                 onChange={(e) => setRadius(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-4 py-2.5 text-sm text-slate-900 appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white transition-all"
+                className="w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-4 py-2.5 text-sm text-slate-900 appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white transition-all"
               >
                 {RADIUS_OPTIONS.map((r) => (
                   <option key={r} value={r}>
@@ -280,12 +282,12 @@ export default function SearchForm({
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
               transition={{ duration: 0.25, ease: "easeInOut" }}
-              className="overflow-x-hidden"
+              className="w-full min-w-0 max-w-full overflow-hidden"
             >
               <div className="border-t border-slate-100 pt-4 pb-1 space-y-3">
                 {/* Year range */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-0">
+                  <div className="min-w-0">
                     <label
                       htmlFor="yearFrom"
                       className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5"
@@ -302,7 +304,7 @@ export default function SearchForm({
                         id="yearFrom"
                         value={yearFrom}
                         onChange={(e) => setYearFrom(e.target.value)}
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-4 py-2.5 text-sm text-slate-900 appearance-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 focus:border-transparent focus:bg-white transition-all"
+                        className="w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-4 py-2.5 text-sm text-slate-900 appearance-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 focus:border-transparent focus:bg-white transition-all"
                       >
                         <option value="">Qualsiasi</option>
                         {YEAR_OPTIONS.map((y) => (
@@ -316,7 +318,7 @@ export default function SearchForm({
                       </div>
                     </div>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <label
                       htmlFor="yearTo"
                       className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5"
@@ -333,7 +335,7 @@ export default function SearchForm({
                         id="yearTo"
                         value={yearTo}
                         onChange={(e) => setYearTo(e.target.value)}
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-4 py-2.5 text-sm text-slate-900 appearance-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 focus:border-transparent focus:bg-white transition-all"
+                        className="w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-4 py-2.5 text-sm text-slate-900 appearance-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 focus:border-transparent focus:bg-white transition-all"
                       >
                         <option value="">Qualsiasi</option>
                         {YEAR_OPTIONS.map((y) => (
@@ -408,8 +410,8 @@ export default function SearchForm({
                 </div>
 
                 {/* Km max + Fuel */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-0">
+                  <div className="min-w-0">
                     <label
                       htmlFor="kmMax"
                       className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5"
@@ -426,7 +428,7 @@ export default function SearchForm({
                         id="kmMax"
                         value={kmMax}
                         onChange={(e) => setKmMax(e.target.value)}
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-4 py-2.5 text-sm text-slate-900 appearance-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 focus:border-transparent focus:bg-white transition-all"
+                        className="w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-4 py-2.5 text-sm text-slate-900 appearance-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 focus:border-transparent focus:bg-white transition-all"
                       >
                         {KM_OPTIONS.map((opt) => (
                           <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -439,7 +441,7 @@ export default function SearchForm({
                       </div>
                     </div>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <label
                       htmlFor="fuel"
                       className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5"
@@ -457,7 +459,7 @@ export default function SearchForm({
                         id="fuel"
                         value={fuel}
                         onChange={(e) => setFuel(e.target.value)}
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-4 py-2.5 text-sm text-slate-900 appearance-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 focus:border-transparent focus:bg-white transition-all"
+                        className="w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-4 py-2.5 text-sm text-slate-900 appearance-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 focus:border-transparent focus:bg-white transition-all"
                       >
                         {FUEL_OPTIONS.map((opt) => (
                           <option key={opt.value} value={opt.value}>{opt.label}</option>
