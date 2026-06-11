@@ -60,4 +60,9 @@ describe('isCityInRegion', () => {
   it('handles partial matches in city text', () => {
     expect(isCityInRegion('Milano (MI)', 'Lombardia')).toBe(true);
   });
+
+  it('matches region by province code', () => {
+    expect(isCityInRegion('Cadoneghe (PD)', 'Veneto')).toBe(true);
+    expect(isCityInRegion('Cadoneghe (PD)', 'Lombardia')).toBe(false);
+  });
 });

@@ -49,6 +49,8 @@ export default function SearchForm({
     yearFrom?: string;
     yearTo?: string;
     kmMax?: string;
+    priceFrom?: string;
+    priceTo?: string;
     fuel?: string;
   };
 }) {
@@ -60,9 +62,11 @@ export default function SearchForm({
   const [yearFrom, setYearFrom] = useState(initialValues?.yearFrom ?? "");
   const [yearTo, setYearTo] = useState(initialValues?.yearTo ?? "");
   const [kmMax, setKmMax] = useState(initialValues?.kmMax ?? "");
+  const [priceFrom, setPriceFrom] = useState(initialValues?.priceFrom ?? "");
+  const [priceTo, setPriceTo] = useState(initialValues?.priceTo ?? "");
   const [fuel, setFuel] = useState(initialValues?.fuel ?? "");
   const [showAdvanced, setShowAdvanced] = useState(
-    !!(initialValues?.yearFrom || initialValues?.yearTo || initialValues?.kmMax || initialValues?.fuel)
+    !!(initialValues?.yearFrom || initialValues?.yearTo || initialValues?.kmMax || initialValues?.priceFrom || initialValues?.priceTo || initialValues?.fuel)
   );
 
   const makeOptions = useMemo(() => getMakeNames(), []);
@@ -70,7 +74,7 @@ export default function SearchForm({
   const modelGroups = useMemo(() => getGroupedModelsForMake(make), [make]);
   const locationOptions = useMemo(() => getLocationOptions(), []);
 
-  const activeFilterCount = [yearFrom, yearTo, kmMax, fuel].filter(Boolean).length;
+  const activeFilterCount = [yearFrom, yearTo, kmMax, priceFrom, priceTo, fuel].filter(Boolean).length;
 
   // Validation: check inputs against known data
   const makeError = useMemo(() => {
@@ -92,7 +96,12 @@ export default function SearchForm({
     return resolved ? undefined : `Località "${location}" non trovata`;
   }, [location]);
 
-  const hasValidationErrors = !!(makeError || modelError || locationError);
+  const priceError = useMemo(() => {
+    if (!priceFrom || !priceTo) return undefined;
+    return Number(priceFrom) <= Number(priceTo) ? undefined : "Il prezzo minimo deve essere inferiore al massimo";
+  }, [priceFrom, priceTo]);
+
+  const hasValidationErrors = !!(makeError || modelError || locationError || priceError);
 
   // Determine if the location is a region (hide radius for regions)
   const isLocationRegion = useMemo(() => {
@@ -140,6 +149,8 @@ export default function SearchForm({
     if (yearFrom) params.set("yearFrom", yearFrom);
     if (yearTo) params.set("yearTo", yearTo);
     if (kmMax) params.set("kmMax", kmMax);
+    if (priceFrom) params.set("priceFrom", priceFrom);
+    if (priceTo) params.set("priceTo", priceTo);
     if (fuel) params.set("fuel", fuel);
     appendCurrentUtmParams(params);
 
@@ -337,6 +348,64 @@ export default function SearchForm({
                         </svg>
                       </div>
                     </div>
+                  </div>
+                </div>
+
+                {/* Price range */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label
+                      htmlFor="priceFrom"
+                      className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5"
+                    >
+                      Prezzo da
+                    </label>
+                    <div className="relative">
+                      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                        <span className="text-sm text-slate-400 font-semibold">€</span>
+                      </div>
+                      <input
+                        id="priceFrom"
+                        type="number"
+                        inputMode="numeric"
+                        min="0"
+                        step="500"
+                        value={priceFrom}
+                        onChange={(e) => setPriceFrom(e.target.value)}
+                        placeholder="Qualsiasi"
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-4 py-2.5 text-sm text-slate-900 appearance-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 focus:border-transparent focus:bg-white transition-all placeholder:text-slate-400"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="priceTo"
+                      className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5"
+                    >
+                      Prezzo a
+                    </label>
+                    <div className="relative">
+                      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                        <span className="text-sm text-slate-400 font-semibold">€</span>
+                      </div>
+                      <input
+                        id="priceTo"
+                        type="number"
+                        inputMode="numeric"
+                        min="0"
+                        step="500"
+                        value={priceTo}
+                        onChange={(e) => setPriceTo(e.target.value)}
+                        placeholder="Qualsiasi"
+                        aria-invalid={!!priceError}
+                        className={`w-full rounded-xl border bg-slate-50 pl-9 pr-4 py-2.5 text-sm text-slate-900 appearance-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 focus:border-transparent focus:bg-white transition-all placeholder:text-slate-400 ${
+                          priceError ? "border-red-300" : "border-slate-200"
+                        }`}
+                      />
+                    </div>
+                    {priceError && (
+                      <p className="mt-1 text-xs text-red-500">{priceError}</p>
+                    )}
                   </div>
                 </div>
 

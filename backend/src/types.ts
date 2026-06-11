@@ -21,6 +21,8 @@ export type SearchParams = {
   yearFrom?: number;
   yearTo?: number;
   kmMax?: number;
+  priceFrom?: number;
+  priceTo?: number;
   fuel?: string;
 };
 
@@ -28,6 +30,8 @@ export type SearchFilters = {
   yearFrom?: number;
   yearTo?: number;
   kmMax?: number;
+  priceFrom?: number;
+  priceTo?: number;
   fuel?: string;
 };
 
