@@ -1,5 +1,6 @@
 import type { CarListing, GeoResult, SearchFilters } from '../types.js';
 import { getMakeSlug, getModelSlug, isListingRelevantToModel } from '../data/modelSlugs.js';
+import { getRegionForProvince } from '../data/locations.js';
 
 // Map Italian region names (from Nominatim) to Subito URL slugs
 const REGION_SLUGS: Record<string, string> = {
@@ -44,19 +45,46 @@ function getRegionSlug(geo: GeoResult | null): string {
   return 'italia';
 }
 
-function buildUrl(make: string, model: string, geo: GeoResult | null, page: number): string {
+const PROVINCE_SLUG_OVERRIDES: Record<string, string> = {
+  'monza e brianza': 'monza',
+};
+
+function slugifyProvince(province: string): string {
+  const lower = province.toLowerCase();
+  if (PROVINCE_SLUG_OVERRIDES[lower]) return PROVINCE_SLUG_OVERRIDES[lower];
+  return lower
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/['’]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function getProvinceSlug(location: string | undefined, geo: GeoResult | null): string | null {
+  if (!location) return null;
+  if (!getRegionForProvince(location)) return null;
+  const regionSlug = getRegionSlug(geo);
+  if (regionSlug === 'italia') return null;
+  return slugifyProvince(location);
+}
+
+export function buildSubitoUrl(make: string, model: string, geo: GeoResult | null, page: number, location?: string): string {
   const makePath = getMakeSlug(make);
   const modelPath = getModelSlug(make, model, 'subito');
   const regionSlug = getRegionSlug(geo);
-  const base = `https://www.subito.it/annunci-${regionSlug}/vendita/auto/${encodeURIComponent(makePath)}/${encodeURIComponent(modelPath)}/`;
+  const provinceSlug = getProvinceSlug(location, geo);
+  const locationPath = provinceSlug ? `${provinceSlug}/` : '';
+  const base = `https://www.subito.it/annunci-${regionSlug}/vendita/auto/${locationPath}${encodeURIComponent(makePath)}/${encodeURIComponent(modelPath)}/`;
   if (page > 1) return `${base}?o=${page}`;
   return base;
 }
 
-function buildFallbackUrl(make: string, model: string, geo: GeoResult | null, page: number): string {
+export function buildSubitoFallbackUrl(make: string, model: string, geo: GeoResult | null, page: number, location?: string): string {
   const makePath = getMakeSlug(make);
   const regionSlug = getRegionSlug(geo);
-  const base = `https://www.subito.it/annunci-${regionSlug}/vendita/auto/${encodeURIComponent(makePath)}/`;
+  const provinceSlug = getProvinceSlug(location, geo);
+  const locationPath = provinceSlug ? `${provinceSlug}/` : '';
+  const base = `https://www.subito.it/annunci-${regionSlug}/vendita/auto/${locationPath}${encodeURIComponent(makePath)}/`;
   const params = new URLSearchParams({ q: model });
   if (page > 1) params.set('o', String(page));
   return `${base}?${params.toString()}`;
@@ -143,7 +171,7 @@ const SUBITO_HEADERS = {
   'Upgrade-Insecure-Requests': '1',
 };
 
-type UrlBuilder = (make: string, model: string, geo: GeoResult | null, page: number) => string;
+type UrlBuilder = (make: string, model: string, geo: GeoResult | null, page: number, location?: string) => string;
 
 const SUBITO_PAGE_CONCURRENCY = 3;
 
@@ -181,8 +209,9 @@ async function fetchSubitoPage(
   model: string,
   geo: GeoResult | null,
   page: number,
+  location?: string,
 ): Promise<SubitoPageResult> {
-  const url = urlBuilder(make, model, geo, page);
+  const url = urlBuilder(make, model, geo, page, location);
   console.log(`[subito] Page ${page}: ${url}`);
 
   try {
@@ -233,11 +262,12 @@ async function fetchSubitoPages(
   geo: GeoResult | null,
   startPage: number,
   endPage: number,
+  location?: string,
 ): Promise<CarListing[]> {
   const listings: CarListing[] = [];
   const pages = Array.from({ length: endPage - startPage + 1 }, (_, index) => startPage + index);
   const pageResults = await runLimited(pages, SUBITO_PAGE_CONCURRENCY, (page) => (
-    fetchSubitoPage(urlBuilder, make, model, geo, page)
+    fetchSubitoPage(urlBuilder, make, model, geo, page, location)
   ));
 
   for (const result of pageResults.sort((a, b) => a.page - b.page)) {
@@ -259,8 +289,9 @@ export async function scrapeSubito(
   geo: GeoResult | null = null,
   maxPages: number = 1,
   filters?: SearchFilters,
+  location?: string,
 ): Promise<CarListing[]> {
-  return scrapeSubitoPageRange(make, model, geo, 1, maxPages, filters);
+  return scrapeSubitoPageRange(make, model, geo, 1, maxPages, filters, location);
 }
 
 export async function scrapeSubitoPageRange(
@@ -270,17 +301,25 @@ export async function scrapeSubitoPageRange(
   startPage: number = 1,
   endPage: number = 1,
   filters?: SearchFilters,
+  location?: string,
 ): Promise<CarListing[]> {
-  console.log(`[subito] Fetching pages ${startPage}-${endPage} (region: ${geo?.region ?? 'italia'})...`);
+  const provinceSlug = getProvinceSlug(location, geo);
+  console.log(`[subito] Fetching pages ${startPage}-${endPage} (region: ${geo?.region ?? 'italia'}${provinceSlug ? `, province: ${provinceSlug}` : ''})...`);
 
-  let allListings = await fetchSubitoPages(buildUrl, make, model, geo, startPage, endPage);
+  let allListings = await fetchSubitoPages(buildSubitoUrl, make, model, geo, startPage, endPage, location);
 
   // Fallback: if model path returned nothing, retry with query-based search
-  if (allListings.length === 0) {
+  if (allListings.length === 0 && startPage === 1) {
     console.log(`[subito] Model path returned 0 results, retrying with ?q=${model} fallback...`);
-    const fallbackListings = await fetchSubitoPages(buildFallbackUrl, make, model, geo, startPage, endPage);
+    const fallbackListings = await fetchSubitoPages(buildSubitoFallbackUrl, make, model, geo, startPage, endPage, location);
     allListings = fallbackListings.filter((l) => isListingRelevantToModel(make, model, l.title));
     console.log(`[subito] Fallback found ${fallbackListings.length} total, ${allListings.length} matching "${model}"`);
+  }
+
+  if (provinceSlug && allListings.length === 0 && startPage === 1) {
+    console.log(`[subito] Province path returned 0 matching results, falling back to regional search...`);
+    const regionalListings = await fetchSubitoPages(buildSubitoUrl, make, model, geo, startPage, endPage);
+    allListings = regionalListings;
   }
 
   // Apply post-scrape filters

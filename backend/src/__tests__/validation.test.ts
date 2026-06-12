@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getProvincesForRegion, isCityInRegion } from '../data/locations.js';
+import { getProvincesForRegion, getRegionForProvince, isCityInRegion } from '../data/locations.js';
 import { isValidMake, isValidModelForMake } from '../data/makes.js';
 
 describe('isValidMake', () => {
@@ -42,6 +42,22 @@ describe('getProvincesForRegion', () => {
 
   it('is case-insensitive', () => {
     expect(getProvincesForRegion('lombardia')).toContain('Milano');
+  });
+});
+
+describe('getRegionForProvince', () => {
+  it('returns the parent region for a province', () => {
+    expect(getRegionForProvince('Milano')).toBe('Lombardia');
+    expect(getRegionForProvince('Roma')).toBe('Lazio');
+  });
+
+  it('is case-insensitive', () => {
+    expect(getRegionForProvince('milano')).toBe('Lombardia');
+  });
+
+  it('returns null for regions and unknown locations', () => {
+    expect(getRegionForProvince('Lombardia')).toBeNull();
+    expect(getRegionForProvince('UnknownRegion')).toBeNull();
   });
 });
 

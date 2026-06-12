@@ -59,12 +59,10 @@ type SearchResponse = {
   warnings?: string[];
   partial?: boolean;
   hasNextPage?: boolean;
-  refreshAfterMs?: number;
   snapshotId?: string;
   snapshotVersion?: number;
   latestSnapshotId?: string;
   latestSnapshotVersion?: number;
-  hasUpdate?: boolean;
 };
 
 type SearchRequestParams = {
@@ -106,7 +104,6 @@ function ResultsView({
   const [error, setError] = useState<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [msgIndex, setMsgIndex] = useState(0);
-  const [availableSnapshotId, setAvailableSnapshotId] = useState<string | null>(null);
 
   // Rotate loading messages every 3s
   useEffect(() => {
@@ -138,13 +135,9 @@ function ResultsView({
     if (snapshotId) params.set("snapshotId", snapshotId);
 
     const controller = new AbortController();
-    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
-    function fetchResults(pinnedSnapshotId?: string) {
-      const requestParams = new URLSearchParams(params);
-      if (pinnedSnapshotId) requestParams.set("snapshotId", pinnedSnapshotId);
-
-      fetch(`${API_BASE}/api/search?${requestParams.toString()}`, {
+    function fetchResults() {
+      fetch(`${API_BASE}/api/search?${params.toString()}`, {
         signal: controller.signal,
       })
         .then(async (res) => {
@@ -155,25 +148,8 @@ function ResultsView({
           return res.json();
         })
         .then((json: SearchResponse) => {
-          if (pinnedSnapshotId && json.hasUpdate && json.latestSnapshotId && json.latestSnapshotId !== json.snapshotId) {
-            setAvailableSnapshotId(json.latestSnapshotId);
-            setLoading(false);
-            return;
-          }
-
-          if (json.partial && json.results.length === 0) {
-            setLoading(true);
-            refreshTimer = setTimeout(() => fetchResults(json.snapshotId), json.refreshAfterMs ?? 2500);
-            return;
-          }
-
           setData(json);
           setLoading(false);
-
-          if (json.partial) {
-            refreshTimer = setTimeout(() => fetchResults(json.snapshotId), json.refreshAfterMs ?? 2500);
-            return;
-          }
 
           if (typeof window !== "undefined" && window.umami) {
             const eventProps: Record<string, string | number | boolean> = {
@@ -197,7 +173,6 @@ function ResultsView({
 
     return () => {
       controller.abort();
-      if (refreshTimer) clearTimeout(refreshTimer);
     };
   }, [make, model, location, locationType, radius, page, sort, yearFrom, yearTo, kmMax, priceFrom, priceTo, fuel, snapshotId]);
 
@@ -229,11 +204,6 @@ function ResultsView({
 
   function handleSortChange(newSort: string) {
     updateParams({ sort: newSort, page: "1", snapshotId: "" }, { preserveSnapshot: false });
-  }
-
-  function handleApplyLatestSnapshot() {
-    if (!availableSnapshotId) return;
-    updateParams({ snapshotId: availableSnapshotId, page: String(page) }, { preserveSnapshot: false });
   }
 
   return (
@@ -433,15 +403,6 @@ function ResultsView({
                       ? `in ${location}`
                       : `vicino a ${location} · raggio ${radius} km`}
                   </p>
-                )}
-                {availableSnapshotId && (
-                  <button
-                    type="button"
-                    onClick={handleApplyLatestSnapshot}
-                    className="mt-2 inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors"
-                  >
-                    Risultati aggiornati disponibili
-                  </button>
                 )}
                 {/* Active filters chips */}
                 {(yearFrom || yearTo || kmMax || priceFrom || priceTo || fuel) && (
