@@ -12,6 +12,12 @@ type CarListing = {
   city?: string | null;
   imageUrl?: string | null;
   originalUrl: string;
+  dealScore?: number | null;
+  priceRating?: "great" | "good" | "fair" | "high" | "unknown";
+  estimatedMarketPrice?: number | null;
+  priceDeltaPercent?: number | null;
+  scoreConfidence?: "high" | "medium" | "low";
+  scoreReasons?: string[];
 };
 
 function formatPrice(price: number | null): string {
@@ -28,8 +34,39 @@ function formatMileage(km: number | null | undefined): string | null {
   return `${new Intl.NumberFormat("it-IT").format(km)} km`;
 }
 
+function getPriceRatingLabel(rating: CarListing["priceRating"]): string | null {
+  switch (rating) {
+    case "great":
+      return "Ottimo prezzo";
+    case "good":
+      return "Buon prezzo";
+    case "fair":
+      return "In linea";
+    case "high":
+      return "Caro";
+    default:
+      return null;
+  }
+}
+
+function getPriceRatingClass(rating: CarListing["priceRating"]): string {
+  switch (rating) {
+    case "great":
+      return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    case "good":
+      return "bg-green-50 text-green-700 border-green-200";
+    case "fair":
+      return "bg-slate-50 text-slate-600 border-slate-200";
+    case "high":
+      return "bg-amber-50 text-amber-700 border-amber-200";
+    default:
+      return "bg-slate-50 text-slate-600 border-slate-200";
+  }
+}
+
 export default function CarCard({ listing }: { listing: CarListing }) {
   const accentClass = listing.source === "autoscout" ? "card-accent-autoscout" : "card-accent-subito";
+  const priceRatingLabel = listing.scoreConfidence !== "low" ? getPriceRatingLabel(listing.priceRating) : null;
 
   function handleClick() {
     if (typeof window !== "undefined" && window.umami) {
@@ -123,6 +160,18 @@ export default function CarCard({ listing }: { listing: CarListing }) {
             </svg>
             <span className="truncate">{listing.city}</span>
           </p>
+        )}
+
+        {priceRatingLabel && (
+          <div className={`inline-flex w-fit items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium ${getPriceRatingClass(listing.priceRating)}`}>
+            {priceRatingLabel}
+            {listing.priceDeltaPercent != null && (
+              <span className="font-semibold">
+                {listing.priceDeltaPercent > 0 ? "+" : ""}
+                {listing.priceDeltaPercent}%
+              </span>
+            )}
+          </div>
         )}
       </div>
     </a>

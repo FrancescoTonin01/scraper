@@ -1,26 +1,34 @@
 export default function Pagination({
   page,
   totalPages,
+  hasNextPage,
   onPageChange,
 }: {
   page: number;
-  totalPages: number;
+  totalPages?: number | null;
+  hasNextPage?: boolean;
   onPageChange: (page: number) => void;
 }) {
-  if (totalPages <= 1) return null;
+  const unknownTotal = totalPages == null;
+  if (!unknownTotal && totalPages <= 1) return null;
+  if (unknownTotal && page <= 1 && !hasNextPage) return null;
 
   const pages: (number | "...")[] = [];
   const delta = 2;
 
-  for (let i = 1; i <= totalPages; i++) {
-    if (
-      i === 1 ||
-      i === totalPages ||
-      (i >= page - delta && i <= page + delta)
-    ) {
-      pages.push(i);
-    } else if (pages[pages.length - 1] !== "...") {
-      pages.push("...");
+  if (unknownTotal) {
+    pages.push(page);
+  } else {
+    for (let i = 1; i <= totalPages; i++) {
+      if (
+        i === 1 ||
+        i === totalPages ||
+        (i >= page - delta && i <= page + delta)
+      ) {
+        pages.push(i);
+      } else if (pages[pages.length - 1] !== "...") {
+        pages.push("...");
+      }
     }
   }
 
@@ -59,7 +67,7 @@ export default function Pagination({
 
       <button
         onClick={() => onPageChange(page + 1)}
-        disabled={page >= totalPages}
+        disabled={unknownTotal ? !hasNextPage : page >= totalPages}
         className="flex items-center gap-1 px-3 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-white hover:shadow-sm border border-transparent hover:border-slate-200 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:border-transparent disabled:hover:shadow-none transition-all"
       >
         Succ

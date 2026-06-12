@@ -43,14 +43,28 @@ type CarListing = {
   city?: string | null;
   imageUrl?: string | null;
   originalUrl: string;
+  dealScore?: number | null;
+  priceRating?: "great" | "good" | "fair" | "high" | "unknown";
+  estimatedMarketPrice?: number | null;
+  priceDeltaPercent?: number | null;
+  scoreConfidence?: "high" | "medium" | "low";
+  scoreReasons?: string[];
 };
 
 type SearchResponse = {
   results: CarListing[];
-  total: number;
+  total?: number | null;
   page: number;
-  totalPages: number;
+  totalPages?: number | null;
   warnings?: string[];
+  partial?: boolean;
+  hasNextPage?: boolean;
+  refreshAfterMs?: number;
+  snapshotId?: string;
+  snapshotVersion?: number;
+  latestSnapshotId?: string;
+  latestSnapshotVersion?: number;
+  hasUpdate?: boolean;
 };
 
 type SearchRequestParams = {
@@ -67,6 +81,7 @@ type SearchRequestParams = {
   priceFrom: string;
   priceTo: string;
   fuel: string;
+  snapshotId: string;
 };
 
 function ResultsView({
@@ -83,6 +98,7 @@ function ResultsView({
   priceFrom,
   priceTo,
   fuel,
+  snapshotId,
 }: SearchRequestParams) {
   const router = useRouter();
   const [data, setData] = useState<SearchResponse | null>(null);
@@ -90,6 +106,7 @@ function ResultsView({
   const [error, setError] = useState<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [msgIndex, setMsgIndex] = useState(0);
+  const [availableSnapshotId, setAvailableSnapshotId] = useState<string | null>(null);
 
   // Rotate loading messages every 3s
   useEffect(() => {
@@ -118,42 +135,75 @@ function ResultsView({
     if (priceFrom) params.set("priceFrom", priceFrom);
     if (priceTo) params.set("priceTo", priceTo);
     if (fuel) params.set("fuel", fuel);
+    if (snapshotId) params.set("snapshotId", snapshotId);
 
     const controller = new AbortController();
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    setAvailableSnapshotId(null);
 
-    fetch(`${API_BASE}/api/search?${params.toString()}`, {
-      signal: controller.signal,
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.error || `Errore ${res.status}`);
-        }
-        return res.json();
+    function fetchResults(pinnedSnapshotId?: string) {
+      const requestParams = new URLSearchParams(params);
+      if (pinnedSnapshotId) requestParams.set("snapshotId", pinnedSnapshotId);
+
+      fetch(`${API_BASE}/api/search?${requestParams.toString()}`, {
+        signal: controller.signal,
       })
-      .then((json: SearchResponse) => {
-        setData(json);
-        setLoading(false);
-        if (typeof window !== "undefined" && window.umami) {
-          window.umami.track("search-completed", {
-            make,
-            model,
-            total: json.total,
-            location: location || "Tutta Italia",
-            ...getMarketingEventProps(),
-          });
-        }
-      })
-      .catch((err) => {
-        if (err.name === "AbortError") return;
-        setError(err.message || "Errore durante la ricerca");
-        setLoading(false);
-      });
+        .then(async (res) => {
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body.error || `Errore ${res.status}`);
+          }
+          return res.json();
+        })
+        .then((json: SearchResponse) => {
+          if (pinnedSnapshotId && json.hasUpdate && json.latestSnapshotId && json.latestSnapshotId !== json.snapshotId) {
+            setAvailableSnapshotId(json.latestSnapshotId);
+            setLoading(false);
+            return;
+          }
 
-    return () => controller.abort();
-  }, [make, model, location, locationType, radius, page, sort, yearFrom, yearTo, kmMax, priceFrom, priceTo, fuel]);
+          if (json.partial && json.results.length === 0) {
+            setLoading(true);
+            refreshTimer = setTimeout(() => fetchResults(json.snapshotId), json.refreshAfterMs ?? 2500);
+            return;
+          }
 
-  function updateParams(overrides: Record<string, string>) {
+          setData(json);
+          setLoading(false);
+
+          if (json.partial) {
+            refreshTimer = setTimeout(() => fetchResults(json.snapshotId), json.refreshAfterMs ?? 2500);
+            return;
+          }
+
+          if (typeof window !== "undefined" && window.umami) {
+            const eventProps: Record<string, string | number | boolean> = {
+              make,
+              model,
+              location: location || "Tutta Italia",
+              ...getMarketingEventProps(),
+            };
+            if (json.total != null) eventProps.total = json.total;
+            window.umami.track("search-completed", eventProps);
+          }
+        })
+        .catch((err) => {
+          if (err.name === "AbortError") return;
+          setError(err.message || "Errore durante la ricerca");
+          setLoading(false);
+        });
+    }
+
+    fetchResults();
+
+    return () => {
+      controller.abort();
+      if (refreshTimer) clearTimeout(refreshTimer);
+    };
+  }, [make, model, location, locationType, radius, page, sort, yearFrom, yearTo, kmMax, priceFrom, priceTo, fuel, snapshotId]);
+
+  function updateParams(overrides: Record<string, string>, options: { preserveSnapshot?: boolean } = {}) {
+    const preserveSnapshot = options.preserveSnapshot ?? true;
     const params = new URLSearchParams({ make, model, radius, page: "1", sort });
     if (location) params.set("location", location);
     if (locationType) params.set("locationType", locationType);
@@ -163,7 +213,12 @@ function ResultsView({
     if (priceFrom) params.set("priceFrom", priceFrom);
     if (priceTo) params.set("priceTo", priceTo);
     if (fuel) params.set("fuel", fuel);
-    for (const [k, v] of Object.entries(overrides)) params.set(k, v);
+    const currentSnapshotId = data?.snapshotId ?? snapshotId;
+    if (preserveSnapshot && currentSnapshotId) params.set("snapshotId", currentSnapshotId);
+    for (const [k, v] of Object.entries(overrides)) {
+      if (v) params.set(k, v);
+      else params.delete(k);
+    }
     appendCurrentUtmParams(params);
     router.push(`/results?${params.toString()}`);
   }
@@ -174,7 +229,12 @@ function ResultsView({
   }
 
   function handleSortChange(newSort: string) {
-    updateParams({ sort: newSort, page: "1" });
+    updateParams({ sort: newSort, page: "1", snapshotId: "" }, { preserveSnapshot: false });
+  }
+
+  function handleApplyLatestSnapshot() {
+    if (!availableSnapshotId) return;
+    updateParams({ snapshotId: availableSnapshotId, page: String(page) }, { preserveSnapshot: false });
   }
 
   return (
@@ -356,9 +416,17 @@ function ResultsView({
             <div className="flex min-w-0 flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
               <div className="min-w-0">
                 <h1 className="text-lg font-semibold text-slate-900">
-                  <span className="text-blue-600">{data.total}</span>{" "}
-                  risultati per{" "}
-                  <span>{make} {model}</span>
+                  {data.total != null ? (
+                    <>
+                      <span className="text-blue-600">{data.total}</span>{" "}
+                      risultati per{" "}
+                      <span>{make} {model}</span>
+                    </>
+                  ) : (
+                    <>
+                      Risultati per <span>{make} {model}</span>
+                    </>
+                  )}
                 </h1>
                 {location && (
                   <p className="text-sm text-slate-500 mt-0.5">
@@ -366,6 +434,15 @@ function ResultsView({
                       ? `in ${location}`
                       : `vicino a ${location} · raggio ${radius} km`}
                   </p>
+                )}
+                {availableSnapshotId && (
+                  <button
+                    type="button"
+                    onClick={handleApplyLatestSnapshot}
+                    className="mt-2 inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors"
+                  >
+                    Risultati aggiornati disponibili
+                  </button>
                 )}
                 {/* Active filters chips */}
                 {(yearFrom || yearTo || kmMax || priceFrom || priceTo || fuel) && (
@@ -405,9 +482,11 @@ function ResultsView({
               </div>
 
               <div className="flex w-full min-w-0 items-center gap-3 sm:w-auto">
-                <span className="text-xs text-slate-400 hidden sm:inline">
-                  Pagina {data.page} di {data.totalPages}
-                </span>
+                {data.totalPages != null && data.totalPages > 0 && (
+                  <span className="text-xs text-slate-400 hidden sm:inline">
+                    Pagina {data.page} di {data.totalPages}
+                  </span>
+                )}
                 <div className="relative w-full sm:w-auto">
                   <select
                     value={sort}
@@ -454,11 +533,14 @@ function ResultsView({
               ))}
             </motion.div>
 
-            <Pagination
-              page={data.page}
-              totalPages={data.totalPages}
-              onPageChange={handlePageChange}
-            />
+            {(data.totalPages != null || data.hasNextPage || data.page > 1) && (
+              <Pagination
+                page={data.page}
+                totalPages={data.totalPages}
+                hasNextPage={data.hasNextPage}
+                onPageChange={handlePageChange}
+              />
+            )}
           </>
         )}
       </div>
@@ -483,6 +565,7 @@ function ResultsContent() {
     priceFrom: searchParams.get("priceFrom") ?? "",
     priceTo: searchParams.get("priceTo") ?? "",
     fuel: searchParams.get("fuel") ?? "",
+    snapshotId: searchParams.get("snapshotId") ?? "",
   };
 
   const requestKey = [
@@ -499,6 +582,7 @@ function ResultsContent() {
     params.priceFrom,
     params.priceTo,
     params.fuel,
+    params.snapshotId,
   ].join("|");
 
   return <ResultsView key={requestKey} {...params} />;

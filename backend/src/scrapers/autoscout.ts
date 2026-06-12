@@ -1,4 +1,4 @@
-import { chromium, type Browser, type Page } from 'playwright';
+import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import type { CarListing, GeoResult, SearchFilters } from '../types.js';
 import { getMakeSlug, getModelSlug } from '../data/modelSlugs.js';
 
@@ -12,10 +12,100 @@ const FUEL_MAP: Record<string, string> = {
   ibrida: '2', // Ibrida benzina; '3' = ibrida diesel
 };
 
+const AUTOSCOUT_CONTEXT_OPTIONS = {
+  userAgent:
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+  locale: 'it-IT',
+};
+const AUTOSCOUT_PAGE_CONCURRENCY = 2;
+
+let browserPromise: Promise<Browser> | null = null;
+
+async function getSharedBrowser(): Promise<Browser> {
+  if (browserPromise) {
+    const browser = await browserPromise;
+    if (browser.isConnected()) return browser;
+    browserPromise = null;
+  }
+
+  browserPromise = chromium.launch({ headless: true });
+  return browserPromise;
+}
+
+async function createSearchContext(): Promise<BrowserContext> {
+  const browser = await getSharedBrowser();
+  return browser.newContext(AUTOSCOUT_CONTEXT_OPTIONS);
+}
+
+async function runLimited<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  async function runWorker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await worker(items[index]);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => runWorker());
+  await Promise.all(workers);
+  return results;
+}
+
+async function resetSharedBrowser(): Promise<void> {
+  const browser = browserPromise ? await browserPromise.catch(() => null) : null;
+  browserPromise = null;
+
+  if (browser?.isConnected()) {
+    await browser.close().catch(() => undefined);
+  }
+}
+
+export async function closeAutoScoutBrowser(): Promise<void> {
+  await resetSharedBrowser();
+}
+
 export type AutoScoutSearchTarget = {
   label: string;
   geo: GeoResult | null;
   radius: number;
+};
+
+type AutoScoutVehicleDetail = {
+  data?: string;
+  iconName?: string;
+  ariaLabel?: string;
+};
+
+type AutoScoutJsonListing = {
+  images?: string[];
+  price?: {
+    priceFormatted?: string;
+  };
+  url?: string;
+  vehicle?: {
+    make?: string;
+    model?: string;
+    modelVersionInput?: string;
+    transmission?: string;
+    fuel?: string;
+    mileageInKm?: string;
+  };
+  location?: {
+    city?: string;
+  };
+  tracking?: {
+    firstRegistration?: string;
+    mileage?: string;
+    price?: string;
+  };
+  vehicleDetails?: AutoScoutVehicleDetail[];
 };
 
 export function buildUrl(
@@ -57,16 +147,6 @@ export function buildUrl(
   }
 
   return `${base}?${params.toString()}`;
-}
-
-async function dismissCookies(page: Page): Promise<void> {
-  try {
-    const acceptBtn = page.locator('button:has-text("Accetta tutto"), button:has-text("Accept All")');
-    await acceptBtn.first().click({ timeout: 5000 });
-    await page.waitForTimeout(500);
-  } catch {
-    // Cookie banner not present or already dismissed
-  }
 }
 
 export function parsePrice(text: string | null): number | null {
@@ -127,12 +207,113 @@ export function extractCity(text: string): string | null {
   return null;
 }
 
+function getVehicleDetail(listing: AutoScoutJsonListing, label: string): string | null {
+  const detail = listing.vehicleDetails?.find((item) => item.ariaLabel === label || item.iconName === label);
+  return detail?.data ?? null;
+}
+
+function parseNumberText(text: string | null | undefined): number | null {
+  if (!text) return null;
+  const num = parseInt(text.replace(/[^0-9]/g, ''), 10);
+  return isNaN(num) ? null : num;
+}
+
+function parseRegistrationYear(text: string | null | undefined): number | null {
+  if (!text) return null;
+  const match = text.match(/(?:\d{2})[-/](\d{4})/);
+  if (!match) return null;
+  const year = parseInt(match[1], 10);
+  return isNaN(year) ? null : year;
+}
+
+function normalizeAutoScoutImageUrl(imageUrl: string | null): string | null {
+  if (!imageUrl) return null;
+  if (imageUrl.includes('autoscout24.net')) {
+    return imageUrl
+      .replace(/_\d+x\d+\./, '_1280x960.')
+      .replace(/\/\d+x\d+\.webp$/, '/1280x960.webp');
+  }
+  return imageUrl;
+}
+
+function getImageArea(imageUrl: string): number {
+  const match = imageUrl.match(/(?:_|\/)(\d{2,4})x(\d{2,4})(?:\.|\/)/);
+  if (!match) return 0;
+  return Number(match[1]) * Number(match[2]);
+}
+
+function selectBestAutoScoutImage(images: string[] | undefined): string | null {
+  if (!images || images.length === 0) return null;
+  const best = [...images].sort((a, b) => getImageArea(b) - getImageArea(a))[0];
+  return normalizeAutoScoutImageUrl(best);
+}
+
+function formatAutoScoutCity(city: string | null | undefined): string | null {
+  if (!city) return null;
+  const withProvinceCode = city.match(/^(.+?)\s+-\s+.+?\s+-\s+([A-Z]{2})$/);
+  if (withProvinceCode) return `${withProvinceCode[1].trim()} (${withProvinceCode[2]})`;
+  return city.trim();
+}
+
+function buildAutoScoutTitle(listing: AutoScoutJsonListing): string {
+  const parts = [
+    listing.vehicle?.make,
+    listing.vehicle?.model,
+    listing.vehicle?.modelVersionInput,
+  ].filter((part): part is string => Boolean(part?.trim()));
+
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+export function parseAutoScoutJsonListing(listing: AutoScoutJsonListing): CarListing | null {
+  if (!listing.url) return null;
+
+  const title = buildAutoScoutTitle(listing);
+  if (!title) return null;
+
+  const registration = listing.tracking?.firstRegistration ?? getVehicleDetail(listing, 'Anno');
+  const mileage = parseNumberText(listing.tracking?.mileage ?? listing.vehicle?.mileageInKm ?? getVehicleDetail(listing, 'Chilometraggio'));
+  const price = parseNumberText(listing.tracking?.price) ?? parsePrice(listing.price?.priceFormatted ?? null);
+  const href = listing.url.startsWith('http') ? listing.url : `https://www.autoscout24.it${listing.url}`;
+
+  return {
+    source: 'autoscout',
+    title,
+    price,
+    mileage,
+    year: parseRegistrationYear(registration),
+    fuel: listing.vehicle?.fuel ?? getVehicleDetail(listing, 'Carburante'),
+    transmission: listing.vehicle?.transmission ?? getVehicleDetail(listing, 'Cambio'),
+    city: formatAutoScoutCity(listing.location?.city),
+    imageUrl: selectBestAutoScoutImage(listing.images),
+    originalUrl: href,
+  };
+}
+
+export function parseAutoScoutNextData(raw: string | null): CarListing[] {
+  if (!raw) return [];
+
+  try {
+    const data = JSON.parse(raw);
+    const listings: AutoScoutJsonListing[] = data?.props?.pageProps?.listings ?? [];
+    return listings
+      .map((listing) => parseAutoScoutJsonListing(listing))
+      .filter((listing): listing is CarListing => listing !== null);
+  } catch {
+    return [];
+  }
+}
+
 async function scrapePage(browserPage: Page): Promise<CarListing[]> {
   try {
     await browserPage.waitForSelector('article', { timeout: 10000 });
   } catch {
     return [];
   }
+
+  const nextData = await browserPage.locator('script#__NEXT_DATA__').textContent({ timeout: 5000 }).catch(() => null);
+  const jsonListings = parseAutoScoutNextData(nextData);
+  if (jsonListings.length > 0) return jsonListings;
 
   const listings = await browserPage.$$eval('article', (articles) => {
     return articles.map((article) => {
@@ -215,6 +396,47 @@ async function scrapePage(browserPage: Page): Promise<CarListing[]> {
     });
 }
 
+type AutoScoutPageJob = {
+  target: AutoScoutSearchTarget;
+  page: number;
+};
+
+type AutoScoutPageResult = {
+  targetLabel: string;
+  page: number;
+  listings: CarListing[];
+};
+
+async function scrapeAutoScoutPageJob(
+  context: BrowserContext,
+  make: string,
+  model: string,
+  filters: SearchFilters | undefined,
+  job: AutoScoutPageJob,
+): Promise<AutoScoutPageResult> {
+  const browserPage = await context.newPage();
+  const url = buildUrl(make, model, job.target.geo, job.target.radius, job.page, filters);
+  console.log(`[autoscout] Page ${job.page} (${job.target.label}): ${url}`);
+
+  try {
+    await browserPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await browserPage.waitForTimeout(1500);
+
+    const listings = await scrapePage(browserPage);
+    if (listings.length === 0) {
+      console.log(`[autoscout] No listings on page ${job.page} for ${job.target.label}.`);
+    }
+
+    return {
+      targetLabel: job.target.label,
+      page: job.page,
+      listings,
+    };
+  } finally {
+    await browserPage.close().catch(() => undefined);
+  }
+}
+
 export async function scrapeAutoScout(
   make: string,
   model: string,
@@ -224,7 +446,7 @@ export async function scrapeAutoScout(
   filters?: SearchFilters,
 ): Promise<CarListing[]> {
   const label = geo?.postcode ? `zip ${geo.postcode}` : 'italia';
-  return scrapeAutoScoutTargets(make, model, [{ label, geo, radius }], maxPages, filters);
+  return scrapeAutoScoutTargetsPageRange(make, model, [{ label, geo, radius }], 1, maxPages, filters);
 }
 
 export async function scrapeAutoScoutTargets(
@@ -234,43 +456,56 @@ export async function scrapeAutoScoutTargets(
   maxPages: number = 1,
   filters?: SearchFilters,
 ): Promise<CarListing[]> {
+  return scrapeAutoScoutTargetsPageRange(make, model, targets, 1, maxPages, filters);
+}
+
+export async function scrapeAutoScoutPageRange(
+  make: string,
+  model: string,
+  geo: GeoResult | null,
+  radius: number,
+  startPage: number,
+  endPage: number,
+  filters?: SearchFilters,
+): Promise<CarListing[]> {
+  const label = geo?.postcode ? `zip ${geo.postcode}` : 'italia';
+  return scrapeAutoScoutTargetsPageRange(make, model, [{ label, geo, radius }], startPage, endPage, filters);
+}
+
+export async function scrapeAutoScoutTargetsPageRange(
+  make: string,
+  model: string,
+  targets: AutoScoutSearchTarget[],
+  startPage: number,
+  endPage: number,
+  filters?: SearchFilters,
+): Promise<CarListing[]> {
+  const maxPages = Math.max(startPage, endPage);
+  const firstPage = Math.max(1, startPage);
   console.log(`[autoscout] Scraping ${targets.length} target(s), up to ${maxPages} pages each...`);
 
-  let browser: Browser | null = null;
+  let context: BrowserContext | null = null;
 
   try {
-    browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({
-      userAgent:
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-      locale: 'it-IT',
-    });
-    const browserPage = await context.newPage();
+    context = await createSearchContext();
     const allListings: CarListing[] = [];
-    let cookiesDismissed = false;
+    const jobs: AutoScoutPageJob[] = [];
 
     for (const target of targets) {
       console.log(`[autoscout] Target: ${target.label}`);
-
-      for (let page = 1; page <= maxPages; page++) {
-        const url = buildUrl(make, model, target.geo, target.radius, page, filters);
-        console.log(`[autoscout] Page ${page}: ${url}`);
-
-        await browserPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        if (!cookiesDismissed) {
-          await dismissCookies(browserPage);
-          cookiesDismissed = true;
-        }
-        await browserPage.waitForTimeout(1500);
-
-        const pageListings = await scrapePage(browserPage);
-        if (pageListings.length === 0) {
-          console.log(`[autoscout] No listings on page ${page} for ${target.label}, stopping target.`);
-          break;
-        }
-
-        allListings.push(...pageListings);
+      for (let page = firstPage; page <= endPage; page++) {
+        jobs.push({ target, page });
       }
+    }
+
+    const pageResults = await runLimited(jobs, AUTOSCOUT_PAGE_CONCURRENCY, (job) => (
+      scrapeAutoScoutPageJob(context!, make, model, filters, job)
+    ));
+
+    for (const result of pageResults.sort((a, b) => (
+      a.targetLabel.localeCompare(b.targetLabel) || a.page - b.page
+    ))) {
+      allListings.push(...result.listings);
     }
 
     const seen = new Set<string>();
@@ -284,8 +519,9 @@ export async function scrapeAutoScoutTargets(
     return unique;
   } catch (err) {
     console.error('[autoscout] Scraping error:', err);
+    await resetSharedBrowser();
     throw err;
   } finally {
-    if (browser) await browser.close();
+    if (context) await context.close().catch(() => undefined);
   }
 }
