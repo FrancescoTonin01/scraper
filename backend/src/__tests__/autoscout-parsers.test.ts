@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { buildUrl, parsePrice, parseDateAndMileage, parseFuel, extractCity } from '../scrapers/autoscout.js';
+import {
+  buildUrl,
+  parsePrice,
+  parseDateAndMileage,
+  parseFuel,
+  extractCity,
+  parseAutoScoutJsonListing,
+  parseAutoScoutNextData,
+} from '../scrapers/autoscout.js';
 
 describe('parsePrice', () => {
   it('parses Italian formatted price', () => {
@@ -99,5 +107,93 @@ describe('buildUrl', () => {
 
     expect(url).toContain('pricefrom=15000');
     expect(url).toContain('priceto=30000');
+  });
+
+  it('uses coordinates and radius when no postcode is present', () => {
+    const url = buildUrl('BMW', 'Serie 3', {
+      lat: 45.43461,
+      lon: 12.33891,
+      region: 'Veneto',
+    }, 200, 1);
+
+    expect(url).toContain('lat=45.43461');
+    expect(url).toContain('lon=12.33891');
+    expect(url).toContain('zipr=200');
+    expect(url).not.toContain('zip=');
+  });
+});
+
+describe('parseAutoScoutJsonListing', () => {
+  it('parses listing data from AutoScout __NEXT_DATA__ payload', () => {
+    const listing = parseAutoScoutJsonListing({
+      images: ['https://prod.pictures.autoscout24.net/listing-images/example.jpg/250x188.webp'],
+      price: { priceFormatted: '€ 10.000' },
+      url: '/annunci/bmw-316-316d-touring-business-advantage-diesel-grigio-abc',
+      vehicle: {
+        make: 'BMW',
+        model: '316',
+        modelVersionInput: '316d Touring Business Advantage',
+        transmission: 'Automatico',
+        fuel: 'Diesel',
+        mileageInKm: '210.949 km',
+      },
+      location: {
+        city: 'Caronno Pertusella - Varese - VA',
+      },
+      tracking: {
+        firstRegistration: '07-2019',
+        mileage: '210949',
+        price: '10000',
+      },
+      vehicleDetails: [
+        { data: '07/2019', ariaLabel: 'Anno' },
+      ],
+    });
+
+    expect(listing).toMatchObject({
+      source: 'autoscout',
+      title: 'BMW 316 316d Touring Business Advantage',
+      price: 10000,
+      mileage: 210949,
+      year: 2019,
+      fuel: 'Diesel',
+      transmission: 'Automatico',
+      city: 'Caronno Pertusella (VA)',
+      originalUrl: 'https://www.autoscout24.it/annunci/bmw-316-316d-touring-business-advantage-diesel-grigio-abc',
+    });
+    expect(listing?.imageUrl).toBe('https://prod.pictures.autoscout24.net/listing-images/example.jpg/1280x960.webp');
+  });
+
+  it('returns null when JSON listing has no usable URL or title', () => {
+    expect(parseAutoScoutJsonListing({ vehicle: { make: 'BMW' } })).toBeNull();
+    expect(parseAutoScoutJsonListing({ url: '/annunci/example' })).toBeNull();
+  });
+});
+
+describe('parseAutoScoutNextData', () => {
+  it('extracts listings from AutoScout page props', () => {
+    const raw = JSON.stringify({
+      props: {
+        pageProps: {
+          listings: [
+            {
+              url: '/annunci/bmw-320-example',
+              vehicle: {
+                make: 'BMW',
+                model: '320',
+                modelVersionInput: 'd Touring',
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    expect(parseAutoScoutNextData(raw)).toHaveLength(1);
+    expect(parseAutoScoutNextData(raw)[0].title).toBe('BMW 320 d Touring');
+  });
+
+  it('returns an empty array for invalid JSON', () => {
+    expect(parseAutoScoutNextData('{')).toEqual([]);
   });
 });

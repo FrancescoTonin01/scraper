@@ -145,55 +145,107 @@ const SUBITO_HEADERS = {
 
 type UrlBuilder = (make: string, model: string, geo: GeoResult | null, page: number) => string;
 
+const SUBITO_PAGE_CONCURRENCY = 3;
+
+async function runLimited<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  async function runWorker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await worker(items[index]);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => runWorker());
+  await Promise.all(workers);
+  return results;
+}
+
+type SubitoPageResult = {
+  page: number;
+  listings: CarListing[];
+  ok: boolean;
+  totalPages: number;
+};
+
+async function fetchSubitoPage(
+  urlBuilder: UrlBuilder,
+  make: string,
+  model: string,
+  geo: GeoResult | null,
+  page: number,
+): Promise<SubitoPageResult> {
+  const url = urlBuilder(make, model, geo, page);
+  console.log(`[subito] Page ${page}: ${url}`);
+
+  try {
+    const res = await fetch(url, { headers: SUBITO_HEADERS });
+
+    if (!res.ok) {
+      console.log(`[subito] HTTP ${res.status} on page ${page}.`);
+      return { page, listings: [], ok: false, totalPages: page };
+    }
+
+    const html = await res.text();
+    const match = html.match(/<script id="__NEXT_DATA__"[^>]*>(.*?)<\/script>/s);
+    if (!match) {
+      console.log(`[subito] No __NEXT_DATA__ found on page ${page}.`);
+      return { page, listings: [], ok: false, totalPages: page };
+    }
+
+    const data = JSON.parse(match[1]);
+    const items = data?.props?.pageProps?.initialState?.items;
+    const ads: SubitoAd[] = items?.originalList ?? [];
+
+    if (ads.length === 0) {
+      console.log(`[subito] No ads on page ${page}.`);
+      return { page, listings: [], ok: false, totalPages: items?.totalPages ?? page };
+    }
+
+    const listings = ads
+      .filter((ad) => ad.kind === 'AdItem')
+      .map((ad) => parseSubitoAd(ad))
+      .filter((listing): listing is CarListing => listing !== null);
+
+    return {
+      page,
+      listings,
+      ok: true,
+      totalPages: items?.totalPages ?? page,
+    };
+  } catch (err) {
+    console.error(`[subito] Error fetching page ${page}:`, err);
+    return { page, listings: [], ok: false, totalPages: page };
+  }
+}
+
 async function fetchSubitoPages(
   urlBuilder: UrlBuilder,
   make: string,
   model: string,
   geo: GeoResult | null,
-  maxPages: number,
+  startPage: number,
+  endPage: number,
 ): Promise<CarListing[]> {
   const listings: CarListing[] = [];
+  const pages = Array.from({ length: endPage - startPage + 1 }, (_, index) => startPage + index);
+  const pageResults = await runLimited(pages, SUBITO_PAGE_CONCURRENCY, (page) => (
+    fetchSubitoPage(urlBuilder, make, model, geo, page)
+  ));
 
-  for (let page = 1; page <= maxPages; page++) {
-    const url = urlBuilder(make, model, geo, page);
-    console.log(`[subito] Page ${page}: ${url}`);
+  for (const result of pageResults.sort((a, b) => a.page - b.page)) {
+    if (!result.ok || result.page > result.totalPages) break;
+    listings.push(...result.listings);
 
-    try {
-      const res = await fetch(url, { headers: SUBITO_HEADERS });
-
-      if (!res.ok) {
-        console.log(`[subito] HTTP ${res.status} on page ${page}, stopping.`);
-        break;
-      }
-
-      const html = await res.text();
-      const match = html.match(/<script id="__NEXT_DATA__"[^>]*>(.*?)<\/script>/s);
-      if (!match) {
-        console.log(`[subito] No __NEXT_DATA__ found on page ${page}, stopping.`);
-        break;
-      }
-
-      const data = JSON.parse(match[1]);
-      const items = data?.props?.pageProps?.initialState?.items;
-      const ads: SubitoAd[] = items?.originalList ?? [];
-
-      if (ads.length === 0) {
-        console.log(`[subito] No ads on page ${page}, stopping.`);
-        break;
-      }
-
-      for (const ad of ads) {
-        if (ad.kind !== 'AdItem') continue;
-        const listing = parseSubitoAd(ad);
-        if (listing) listings.push(listing);
-      }
-
-      if (page >= (items?.totalPages ?? 1)) {
-        console.log(`[subito] Reached last page (${page}).`);
-        break;
-      }
-    } catch (err) {
-      console.error(`[subito] Error fetching page ${page}:`, err);
+    if (result.page >= result.totalPages) {
+      console.log(`[subito] Reached last page (${result.page}).`);
       break;
     }
   }
@@ -208,14 +260,25 @@ export async function scrapeSubito(
   maxPages: number = 1,
   filters?: SearchFilters,
 ): Promise<CarListing[]> {
-  console.log(`[subito] Fetching up to ${maxPages} pages (region: ${geo?.region ?? 'italia'})...`);
+  return scrapeSubitoPageRange(make, model, geo, 1, maxPages, filters);
+}
 
-  let allListings = await fetchSubitoPages(buildUrl, make, model, geo, maxPages);
+export async function scrapeSubitoPageRange(
+  make: string,
+  model: string,
+  geo: GeoResult | null = null,
+  startPage: number = 1,
+  endPage: number = 1,
+  filters?: SearchFilters,
+): Promise<CarListing[]> {
+  console.log(`[subito] Fetching pages ${startPage}-${endPage} (region: ${geo?.region ?? 'italia'})...`);
+
+  let allListings = await fetchSubitoPages(buildUrl, make, model, geo, startPage, endPage);
 
   // Fallback: if model path returned nothing, retry with query-based search
   if (allListings.length === 0) {
     console.log(`[subito] Model path returned 0 results, retrying with ?q=${model} fallback...`);
-    const fallbackListings = await fetchSubitoPages(buildFallbackUrl, make, model, geo, maxPages);
+    const fallbackListings = await fetchSubitoPages(buildFallbackUrl, make, model, geo, startPage, endPage);
     allListings = fallbackListings.filter((l) => isListingRelevantToModel(make, model, l.title));
     console.log(`[subito] Fallback found ${fallbackListings.length} total, ${allListings.length} matching "${model}"`);
   }
