@@ -56,7 +56,7 @@ type SearchDebugTimings = SearchDebug['timingsMs'];
 const searchStates = new Map<string, SearchState>();
 const snapshotIndex = new Map<string, { cacheKey: string; snapshot: SearchSnapshot }>();
 const CACHE_TTL = 15 * 60 * 1000; // 15 minutes
-const INITIAL_SNAPSHOT_PAGES = 2;
+const INITIAL_SNAPSHOT_PAGES = 4;
 const BACKGROUND_CHUNK_SIZE = 4;
 const BACKGROUND_MAX_PAGES = 16;
 const PARTIAL_REFRESH_AFTER_MS = 2500;
@@ -205,6 +205,7 @@ type ScrapeSearchArgs = {
   filters: SearchFilters;
   geo: GeoResult | null;
   isRegionSearch: boolean;
+  sort: SortOption;
   startPage: number;
   endPage: number;
   targets?: AutoScoutSearchTarget[];
@@ -253,6 +254,7 @@ async function scrapeSearch(args: ScrapeSearchArgs): Promise<ScrapeSearchResult>
     filters,
     geo,
     isRegionSearch,
+    sort,
     startPage,
     endPage,
     targets,
@@ -264,11 +266,11 @@ async function scrapeSearch(args: ScrapeSearchArgs): Promise<ScrapeSearchResult>
     ? Promise.resolve(targets ?? []).then((resolvedTargets) => {
         if (resolvedTargets.length === 0) {
           console.log('[search] No province targets for AutoScout region search, falling back to all Italy');
-          return timed(timings, 'autoscout', () => scrapeAutoScoutPageRange(make, model, null, radius, startPage, endPage, filters));
+          return timed(timings, 'autoscout', () => scrapeAutoScoutPageRange(make, model, null, radius, startPage, endPage, filters, sort));
         }
-        return timed(timings, 'autoscout', () => scrapeAutoScoutTargetsPageRange(make, model, resolvedTargets, startPage, endPage, filters));
+        return timed(timings, 'autoscout', () => scrapeAutoScoutTargetsPageRange(make, model, resolvedTargets, startPage, endPage, filters, sort));
       })
-    : timed(timings, 'autoscout', () => scrapeAutoScoutPageRange(make, model, geo, radius, startPage, endPage, filters));
+    : timed(timings, 'autoscout', () => scrapeAutoScoutPageRange(make, model, geo, radius, startPage, endPage, filters, sort));
 
   const [autoscoutResult, subitoResult] = await Promise.allSettled([
     autoscoutPromise,
@@ -420,6 +422,7 @@ function startBackgroundChunks(
   args: Omit<ScrapeSearchArgs, 'startPage' | 'endPage' | 'targets' | 'timings'>,
 ): void {
   if (state.background) return;
+  if (getLatestSnapshot(state)?.partial === false) return;
 
   state.background = (async () => {
     for (let startPage = INITIAL_SNAPSHOT_PAGES + 1; startPage <= BACKGROUND_MAX_PAGES; startPage += BACKGROUND_CHUNK_SIZE) {
@@ -537,6 +540,7 @@ app.get('/api/search', async (req, res) => {
     filters,
     geo,
     isRegionSearch,
+    sort,
   };
 
   try {

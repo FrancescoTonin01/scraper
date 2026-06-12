@@ -1,6 +1,7 @@
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import type { CarListing, GeoResult, SearchFilters } from '../types.js';
 import { getMakeSlug, getModelSlug } from '../data/modelSlugs.js';
+import type { SortOption } from '../searchResults.js';
 
 // Map fuel filter values to AutoScout24 URL parameter codes
 const FUEL_MAP: Record<string, string> = {
@@ -115,14 +116,15 @@ export function buildUrl(
   radius: number,
   page: number,
   filters?: SearchFilters,
+  sort?: SortOption,
 ): string {
   const makePath = getMakeSlug(make);
   const modelPath = getModelSlug(make, model, 'autoscout');
   const base = `https://www.autoscout24.it/lst/${encodeURIComponent(makePath)}/${encodeURIComponent(modelPath)}`;
 
   const params = new URLSearchParams({
-    sort: 'standard',
-    desc: '0',
+    sort: sort === 'price_asc' || sort === 'price_desc' ? 'price' : 'standard',
+    desc: sort === 'price_desc' ? '1' : '0',
     ustate: 'N,U',
     size: '20',
     page: String(page),
@@ -416,10 +418,11 @@ async function scrapeAutoScoutPageJob(
   make: string,
   model: string,
   filters: SearchFilters | undefined,
+  sort: SortOption | undefined,
   job: AutoScoutPageJob,
 ): Promise<AutoScoutPageResult> {
   const browserPage = await context.newPage();
-  const url = buildUrl(make, model, job.target.geo, job.target.radius, job.page, filters);
+  const url = buildUrl(make, model, job.target.geo, job.target.radius, job.page, filters, sort);
   console.log(`[autoscout] Page ${job.page} (${job.target.label}): ${url}`);
 
   try {
@@ -448,9 +451,10 @@ export async function scrapeAutoScout(
   radius: number,
   maxPages: number = 1,
   filters?: SearchFilters,
+  sort?: SortOption,
 ): Promise<CarListing[]> {
   const label = geo?.postcode ? `zip ${geo.postcode}` : 'italia';
-  return scrapeAutoScoutTargetsPageRange(make, model, [{ label, geo, radius }], 1, maxPages, filters);
+  return scrapeAutoScoutTargetsPageRange(make, model, [{ label, geo, radius }], 1, maxPages, filters, sort);
 }
 
 export async function scrapeAutoScoutTargets(
@@ -459,8 +463,9 @@ export async function scrapeAutoScoutTargets(
   targets: AutoScoutSearchTarget[],
   maxPages: number = 1,
   filters?: SearchFilters,
+  sort?: SortOption,
 ): Promise<CarListing[]> {
-  return scrapeAutoScoutTargetsPageRange(make, model, targets, 1, maxPages, filters);
+  return scrapeAutoScoutTargetsPageRange(make, model, targets, 1, maxPages, filters, sort);
 }
 
 export async function scrapeAutoScoutPageRange(
@@ -471,9 +476,10 @@ export async function scrapeAutoScoutPageRange(
   startPage: number,
   endPage: number,
   filters?: SearchFilters,
+  sort?: SortOption,
 ): Promise<CarListing[]> {
   const label = geo?.postcode ? `zip ${geo.postcode}` : 'italia';
-  return scrapeAutoScoutTargetsPageRange(make, model, [{ label, geo, radius }], startPage, endPage, filters);
+  return scrapeAutoScoutTargetsPageRange(make, model, [{ label, geo, radius }], startPage, endPage, filters, sort);
 }
 
 export async function scrapeAutoScoutTargetsPageRange(
@@ -483,6 +489,7 @@ export async function scrapeAutoScoutTargetsPageRange(
   startPage: number,
   endPage: number,
   filters?: SearchFilters,
+  sort?: SortOption,
 ): Promise<CarListing[]> {
   const maxPages = Math.max(startPage, endPage);
   const firstPage = Math.max(1, startPage);
@@ -503,7 +510,7 @@ export async function scrapeAutoScoutTargetsPageRange(
     }
 
     const pageResults = await runLimited(jobs, AUTOSCOUT_PAGE_CONCURRENCY, (job) => (
-      scrapeAutoScoutPageJob(context!, make, model, filters, job)
+      scrapeAutoScoutPageJob(context!, make, model, filters, sort, job)
     ));
 
     for (const result of pageResults.sort((a, b) => (

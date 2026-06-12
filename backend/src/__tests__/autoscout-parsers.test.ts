@@ -109,6 +109,16 @@ describe('buildUrl', () => {
     expect(url).toContain('priceto=30000');
   });
 
+  it('uses AutoScout price sorting when requested', () => {
+    const ascUrl = buildUrl('BMW', 'Serie 3', null, 100, 1, undefined, 'price_asc');
+    const descUrl = buildUrl('BMW', 'Serie 3', null, 100, 1, undefined, 'price_desc');
+
+    expect(ascUrl).toContain('sort=price');
+    expect(ascUrl).toContain('desc=0');
+    expect(descUrl).toContain('sort=price');
+    expect(descUrl).toContain('desc=1');
+  });
+
   it('uses coordinates and radius when no postcode is present', () => {
     const url = buildUrl('BMW', 'Serie 3', {
       lat: 45.43461,
