@@ -1,6 +1,7 @@
 import type { CarListing, GeoResult, SearchFilters } from '../types.js';
 import { getMakeSlug, getModelSlug, isListingRelevantToModel } from '../data/modelSlugs.js';
 import { getRegionForProvince } from '../data/locations.js';
+import type { SortOption } from '../searchResults.js';
 
 // Map Italian region names (from Nominatim) to Subito URL slugs
 const REGION_SLUGS: Record<string, string> = {
@@ -68,26 +69,38 @@ function getProvinceSlug(location: string | undefined, geo: GeoResult | null): s
   return slugifyProvince(location);
 }
 
-export function buildSubitoUrl(make: string, model: string, geo: GeoResult | null, page: number, location?: string): string {
+function getSubitoOrder(sort: SortOption | undefined): string | null {
+  if (sort === 'price_asc') return 'priceasc';
+  if (sort === 'price_desc') return 'pricedesc';
+  return null;
+}
+
+function appendSubitoQuery(base: string, page: number, sort?: SortOption, extra?: Record<string, string>): string {
+  const params = new URLSearchParams(extra);
+  const order = getSubitoOrder(sort);
+  if (order) params.set('order', order);
+  if (page > 1) params.set('o', String(page));
+  const query = params.toString();
+  return query ? `${base}?${query}` : base;
+}
+
+export function buildSubitoUrl(make: string, model: string, geo: GeoResult | null, page: number, location?: string, sort?: SortOption): string {
   const makePath = getMakeSlug(make);
   const modelPath = getModelSlug(make, model, 'subito');
   const regionSlug = getRegionSlug(geo);
   const provinceSlug = getProvinceSlug(location, geo);
   const locationPath = provinceSlug ? `${provinceSlug}/` : '';
   const base = `https://www.subito.it/annunci-${regionSlug}/vendita/auto/${locationPath}${encodeURIComponent(makePath)}/${encodeURIComponent(modelPath)}/`;
-  if (page > 1) return `${base}?o=${page}`;
-  return base;
+  return appendSubitoQuery(base, page, sort);
 }
 
-export function buildSubitoFallbackUrl(make: string, model: string, geo: GeoResult | null, page: number, location?: string): string {
+export function buildSubitoFallbackUrl(make: string, model: string, geo: GeoResult | null, page: number, location?: string, sort?: SortOption): string {
   const makePath = getMakeSlug(make);
   const regionSlug = getRegionSlug(geo);
   const provinceSlug = getProvinceSlug(location, geo);
   const locationPath = provinceSlug ? `${provinceSlug}/` : '';
   const base = `https://www.subito.it/annunci-${regionSlug}/vendita/auto/${locationPath}${encodeURIComponent(makePath)}/`;
-  const params = new URLSearchParams({ q: model });
-  if (page > 1) params.set('o', String(page));
-  return `${base}?${params.toString()}`;
+  return appendSubitoQuery(base, page, sort, { q: model });
 }
 
 function getFeatureValue(features: Record<string, unknown>, key: string): string | null {
@@ -171,7 +184,7 @@ const SUBITO_HEADERS = {
   'Upgrade-Insecure-Requests': '1',
 };
 
-type UrlBuilder = (make: string, model: string, geo: GeoResult | null, page: number, location?: string) => string;
+type UrlBuilder = (make: string, model: string, geo: GeoResult | null, page: number, location?: string, sort?: SortOption) => string;
 
 const SUBITO_PAGE_CONCURRENCY = 3;
 
@@ -210,8 +223,9 @@ async function fetchSubitoPage(
   geo: GeoResult | null,
   page: number,
   location?: string,
+  sort?: SortOption,
 ): Promise<SubitoPageResult> {
-  const url = urlBuilder(make, model, geo, page, location);
+  const url = urlBuilder(make, model, geo, page, location, sort);
   console.log(`[subito] Page ${page}: ${url}`);
 
   try {
@@ -263,11 +277,12 @@ async function fetchSubitoPages(
   startPage: number,
   endPage: number,
   location?: string,
+  sort?: SortOption,
 ): Promise<CarListing[]> {
   const listings: CarListing[] = [];
   const pages = Array.from({ length: endPage - startPage + 1 }, (_, index) => startPage + index);
   const pageResults = await runLimited(pages, SUBITO_PAGE_CONCURRENCY, (page) => (
-    fetchSubitoPage(urlBuilder, make, model, geo, page, location)
+    fetchSubitoPage(urlBuilder, make, model, geo, page, location, sort)
   ));
 
   for (const result of pageResults.sort((a, b) => a.page - b.page)) {
@@ -290,8 +305,9 @@ export async function scrapeSubito(
   maxPages: number = 1,
   filters?: SearchFilters,
   location?: string,
+  sort?: SortOption,
 ): Promise<CarListing[]> {
-  return scrapeSubitoPageRange(make, model, geo, 1, maxPages, filters, location);
+  return scrapeSubitoPageRange(make, model, geo, 1, maxPages, filters, location, sort);
 }
 
 export async function scrapeSubitoPageRange(
@@ -302,23 +318,24 @@ export async function scrapeSubitoPageRange(
   endPage: number = 1,
   filters?: SearchFilters,
   location?: string,
+  sort?: SortOption,
 ): Promise<CarListing[]> {
   const provinceSlug = getProvinceSlug(location, geo);
   console.log(`[subito] Fetching pages ${startPage}-${endPage} (region: ${geo?.region ?? 'italia'}${provinceSlug ? `, province: ${provinceSlug}` : ''})...`);
 
-  let allListings = await fetchSubitoPages(buildSubitoUrl, make, model, geo, startPage, endPage, location);
+  let allListings = await fetchSubitoPages(buildSubitoUrl, make, model, geo, startPage, endPage, location, sort);
 
   // Fallback: if model path returned nothing, retry with query-based search
   if (allListings.length === 0 && startPage === 1) {
     console.log(`[subito] Model path returned 0 results, retrying with ?q=${model} fallback...`);
-    const fallbackListings = await fetchSubitoPages(buildSubitoFallbackUrl, make, model, geo, startPage, endPage, location);
+    const fallbackListings = await fetchSubitoPages(buildSubitoFallbackUrl, make, model, geo, startPage, endPage, location, sort);
     allListings = fallbackListings.filter((l) => isListingRelevantToModel(make, model, l.title));
     console.log(`[subito] Fallback found ${fallbackListings.length} total, ${allListings.length} matching "${model}"`);
   }
 
   if (provinceSlug && allListings.length === 0 && startPage === 1) {
     console.log(`[subito] Province path returned 0 matching results, falling back to regional search...`);
-    const regionalListings = await fetchSubitoPages(buildSubitoUrl, make, model, geo, startPage, endPage);
+    const regionalListings = await fetchSubitoPages(buildSubitoUrl, make, model, geo, startPage, endPage, undefined, sort);
     allListings = regionalListings;
   }
 

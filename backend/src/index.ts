@@ -274,7 +274,7 @@ async function scrapeSearch(args: ScrapeSearchArgs): Promise<ScrapeSearchResult>
 
   const [autoscoutResult, subitoResult] = await Promise.allSettled([
     autoscoutPromise,
-    timed(timings, 'subito', () => scrapeSubitoPageRange(make, model, geo, startPage, endPage, filters, isRegionSearch ? undefined : location)),
+    timed(timings, 'subito', () => scrapeSubitoPageRange(make, model, geo, startPage, endPage, filters, isRegionSearch ? undefined : location, sort)),
   ]);
 
   let allListings: CarListing[] = [];
