@@ -139,7 +139,6 @@ function ResultsView({
 
     const controller = new AbortController();
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-    setAvailableSnapshotId(null);
 
     function fetchResults(pinnedSnapshotId?: string) {
       const requestParams = new URLSearchParams(params);
