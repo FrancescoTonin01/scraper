@@ -108,6 +108,19 @@ describe('buildUrl', () => {
     expect(url).toContain('pricefrom=15000');
     expect(url).toContain('priceto=30000');
   });
+
+  it('uses coordinates and radius when no postcode is present', () => {
+    const url = buildUrl('BMW', 'Serie 3', {
+      lat: 45.43461,
+      lon: 12.33891,
+      region: 'Veneto',
+    }, 200, 1);
+
+    expect(url).toContain('lat=45.43461');
+    expect(url).toContain('lon=12.33891');
+    expect(url).toContain('zipr=200');
+    expect(url).not.toContain('zip=');
+  });
 });
 
 describe('parseAutoScoutJsonListing', () => {

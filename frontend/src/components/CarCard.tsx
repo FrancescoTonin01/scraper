@@ -165,12 +165,6 @@ export default function CarCard({ listing }: { listing: CarListing }) {
         {priceRatingLabel && (
           <div className={`inline-flex w-fit items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium ${getPriceRatingClass(listing.priceRating)}`}>
             {priceRatingLabel}
-            {listing.priceDeltaPercent != null && (
-              <span className="font-semibold">
-                {listing.priceDeltaPercent > 0 ? "+" : ""}
-                {listing.priceDeltaPercent}%
-              </span>
-            )}
           </div>
         )}
       </div>

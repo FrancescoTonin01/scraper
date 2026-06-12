@@ -134,7 +134,7 @@ export function paginateListings(
       page,
       ...(warnings.length > 0 && { warnings }),
       partial: true,
-      hasNextPage: sorted.length > start + pageSize || page < PARTIAL_NAV_PAGES,
+      hasNextPage: sorted.length > start + pageSize,
       ...(refreshAfterMs && { refreshAfterMs }),
     };
   }

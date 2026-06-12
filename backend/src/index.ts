@@ -6,7 +6,7 @@ import { scrapeAutoScoutPageRange, scrapeAutoScoutTargetsPageRange, type AutoSco
 import { scrapeSubitoPageRange } from './scrapers/subito.js';
 import { geocodeCity } from './utils/geocode.js';
 import { isValidMake, isValidModelForMake } from './data/makes.js';
-import { isValidLocation, isCityInRegion, getProvincesForRegion } from './data/locations.js';
+import { isValidLocation, isCityInRegion } from './data/locations.js';
 import { isListingRelevantToModel } from './data/modelSlugs.js';
 import { buildAlertLookup, buildAlertSegmentKey, escapeCsvValue } from './utils/marketing.js';
 import { paginateListings, scoreListings, SORT_OPTIONS, type SortOption } from './searchResults.js';
@@ -56,11 +56,11 @@ type SearchDebugTimings = SearchDebug['timingsMs'];
 const searchStates = new Map<string, SearchState>();
 const snapshotIndex = new Map<string, { cacheKey: string; snapshot: SearchSnapshot }>();
 const CACHE_TTL = 15 * 60 * 1000; // 15 minutes
-const INITIAL_SNAPSHOT_PAGES = 4;
+const INITIAL_SNAPSHOT_PAGES = 2;
 const BACKGROUND_CHUNK_SIZE = 4;
 const BACKGROUND_MAX_PAGES = 16;
 const PARTIAL_REFRESH_AFTER_MS = 2500;
-const REGION_AUTOSCOUT_RADIUS_KM = 100;
+const REGION_AUTOSCOUT_RADIUS_KM = 200;
 let snapshotSeq = 0;
 
 function getCacheKey(
@@ -227,24 +227,21 @@ async function timed<T>(
 }
 
 async function getRegionAutoScoutTargets(region: string): Promise<AutoScoutSearchTarget[]> {
-  const provinces = getProvincesForRegion(region);
-  const targets: AutoScoutSearchTarget[] = [];
-
-  for (const province of provinces) {
-    const geo = await geocodeCity(province);
-    if (!geo?.postcode) {
-      console.log(`[search] Could not geocode province "${province}" for AutoScout region search`);
-      continue;
-    }
-
-    targets.push({
-      label: `${province} (${geo.postcode})`,
-      geo,
-      radius: REGION_AUTOSCOUT_RADIUS_KM,
-    });
+  const geo = await geocodeCity(region);
+  if (!geo) {
+    console.log(`[search] Could not geocode region "${region}" for AutoScout region search`);
+    return [];
   }
 
-  return targets;
+  return [{
+    label: `${region} (${geo.lat},${geo.lon})`,
+    geo: {
+      lat: geo.lat,
+      lon: geo.lon,
+      region: geo.region,
+    },
+    radius: REGION_AUTOSCOUT_RADIUS_KM,
+  }];
 }
 
 async function scrapeSearch(args: ScrapeSearchArgs): Promise<ScrapeSearchResult> {

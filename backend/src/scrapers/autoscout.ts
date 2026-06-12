@@ -133,6 +133,10 @@ export function buildUrl(
   if (geo?.postcode) {
     params.set('zip', geo.postcode);
     params.set('zipr', String(radius));
+  } else if (geo) {
+    params.set('lat', String(geo.lat));
+    params.set('lon', String(geo.lon));
+    params.set('zipr', String(radius));
   }
 
   // Advanced filters
