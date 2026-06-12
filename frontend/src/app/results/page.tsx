@@ -59,10 +59,12 @@ type SearchResponse = {
   warnings?: string[];
   partial?: boolean;
   hasNextPage?: boolean;
+  refreshAfterMs?: number;
   snapshotId?: string;
   snapshotVersion?: number;
   latestSnapshotId?: string;
   latestSnapshotVersion?: number;
+  hasUpdate?: boolean;
 };
 
 type SearchRequestParams = {
@@ -135,9 +137,13 @@ function ResultsView({
     if (snapshotId) params.set("snapshotId", snapshotId);
 
     const controller = new AbortController();
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
-    function fetchResults() {
-      fetch(`${API_BASE}/api/search?${params.toString()}`, {
+    function fetchResults(nextSnapshotId?: string, options: { silent?: boolean } = {}) {
+      const requestParams = new URLSearchParams(params);
+      if (nextSnapshotId) requestParams.set("snapshotId", nextSnapshotId);
+
+      fetch(`${API_BASE}/api/search?${requestParams.toString()}`, {
         signal: controller.signal,
       })
         .then(async (res) => {
@@ -148,10 +154,21 @@ function ResultsView({
           return res.json();
         })
         .then((json: SearchResponse) => {
+          if (json.hasUpdate && json.latestSnapshotId && json.latestSnapshotId !== json.snapshotId) {
+            fetchResults(json.latestSnapshotId, { silent: true });
+            return;
+          }
+
           setData(json);
           setLoading(false);
 
-          if (typeof window !== "undefined" && window.umami) {
+          if (json.partial) {
+            refreshTimer = setTimeout(() => {
+              fetchResults(json.snapshotId, { silent: true });
+            }, json.refreshAfterMs ?? 2500);
+          }
+
+          if (!options.silent && typeof window !== "undefined" && window.umami) {
             const eventProps: Record<string, string | number | boolean> = {
               make,
               model,
@@ -173,6 +190,7 @@ function ResultsView({
 
     return () => {
       controller.abort();
+      if (refreshTimer) clearTimeout(refreshTimer);
     };
   }, [make, model, location, locationType, radius, page, sort, yearFrom, yearTo, kmMax, priceFrom, priceTo, fuel, snapshotId]);
 
