@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canServeCachedSearch, paginateListings, scoreListings, sortListings } from '../searchResults.js';
+import { canServeCachedSearch, paginateListings, requiresCompleteSnapshot, scoreListings, sortListings } from '../searchResults.js';
 import type { CarListing } from '../types.js';
 
 const listings: CarListing[] = [
@@ -39,12 +39,12 @@ describe('sortListings', () => {
 });
 
 describe('paginateListings', () => {
-  it('omits totals and page counts for partial responses', () => {
+  it('does not expose globally sorted results for partial responses', () => {
     const response = paginateListings(listings, [], 1, 2, 'price_asc', true, 2500);
 
-    expect(response.results.map((listing) => listing.title)).toEqual(['Car B', 'Car A']);
+    expect(response.results).toEqual([]);
     expect(response.partial).toBe(true);
-    expect(response.hasNextPage).toBe(true);
+    expect(response.hasNextPage).toBe(false);
     expect(response.refreshAfterMs).toBe(2500);
     expect(response.total).toBeUndefined();
     expect(response.totalPages).toBeUndefined();
@@ -58,6 +58,15 @@ describe('paginateListings', () => {
     expect(response.hasNextPage).toBe(true);
     expect(response.total).toBe(3);
     expect(response.totalPages).toBe(2);
+  });
+});
+
+describe('requiresCompleteSnapshot', () => {
+  it('requires complete snapshots for every supported global sort', () => {
+    expect(requiresCompleteSnapshot('price_asc')).toBe(true);
+    expect(requiresCompleteSnapshot('price_desc')).toBe(true);
+    expect(requiresCompleteSnapshot('year_desc')).toBe(true);
+    expect(requiresCompleteSnapshot('km_asc')).toBe(true);
   });
 });
 
@@ -132,9 +141,9 @@ describe('scoreListings', () => {
 });
 
 describe('canServeCachedSearch', () => {
-  it('allows partial cache only after the minimum default-sort depth is loaded', () => {
-    expect(canServeCachedSearch(true, 1, 'price_asc', 2, listings.length, 4, 4)).toBe(true);
-    expect(canServeCachedSearch(true, 2, 'price_asc', 2, listings.length, 4, 4)).toBe(true);
+  it('rejects partial cache for globally sorted pages', () => {
+    expect(canServeCachedSearch(true, 1, 'price_asc', 2, listings.length, 4, 4)).toBe(false);
+    expect(canServeCachedSearch(true, 2, 'price_asc', 2, listings.length, 4, 4)).toBe(false);
     expect(canServeCachedSearch(true, 1, 'price_asc', 2, listings.length, 3, 4)).toBe(false);
     expect(canServeCachedSearch(true, 2, 'price_asc', 20, listings.length, 4, 4)).toBe(false);
     expect(canServeCachedSearch(true, 1, 'price_desc', 2, listings.length, 4, 4)).toBe(false);

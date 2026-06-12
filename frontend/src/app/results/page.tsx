@@ -159,6 +159,14 @@ function ResultsView({
             return;
           }
 
+          if (json.partial && json.results.length === 0) {
+            setLoading(true);
+            refreshTimer = setTimeout(() => {
+              fetchResults(json.snapshotId, { silent: true });
+            }, json.refreshAfterMs ?? 2500);
+            return;
+          }
+
           setData(json);
           setLoading(false);
 

@@ -6,6 +6,10 @@ export type SortOption = typeof SORT_OPTIONS[number];
 export const DEFAULT_SORT: SortOption = 'price_asc';
 export const PARTIAL_NAV_PAGES = 4;
 
+export function requiresCompleteSnapshot(sort: SortOption): boolean {
+  return SORT_OPTIONS.includes(sort);
+}
+
 function median(values: number[]): number | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
@@ -110,6 +114,7 @@ export function canServeCachedSearch(
   requiredPartialPages: number,
 ): boolean {
   if (!partial) return true;
+  if (requiresCompleteSnapshot(sort)) return false;
   if (sort !== DEFAULT_SORT || page > PARTIAL_NAV_PAGES) return false;
   if (loadedPages < requiredPartialPages) return false;
   return listingCount > (page - 1) * pageSize;
@@ -124,6 +129,17 @@ export function paginateListings(
   partial = false,
   refreshAfterMs?: number,
 ): SearchResponse {
+  if (partial && requiresCompleteSnapshot(sort)) {
+    return {
+      results: [],
+      page,
+      ...(warnings.length > 0 && { warnings }),
+      partial: true,
+      hasNextPage: false,
+      ...(refreshAfterMs && { refreshAfterMs }),
+    };
+  }
+
   const sorted = sortListings(listings, sort);
   const start = (page - 1) * pageSize;
   const paginatedResults = sorted.slice(start, start + pageSize);
