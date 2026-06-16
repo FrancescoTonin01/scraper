@@ -1,5 +1,9 @@
 import type { CarListing, GeoResult, SearchFilters } from '../types.js';
 import { getMakeSlug, getModelSlug, isListingRelevantToModel } from '../data/modelSlugs.js';
+import { getRegionForProvince } from '../data/locations.js';
+import type { SortOption } from '../searchResults.js';
+import { runLimited } from '../utils/concurrency.js';
+import { dedupeListingsByOriginalUrl, filterListingsBySearchFilters } from '../utils/listings.js';
 
 // Map Italian region names (from Nominatim) to Subito URL slugs
 const REGION_SLUGS: Record<string, string> = {
@@ -44,22 +48,61 @@ function getRegionSlug(geo: GeoResult | null): string {
   return 'italia';
 }
 
-function buildUrl(make: string, model: string, geo: GeoResult | null, page: number): string {
+const PROVINCE_SLUG_OVERRIDES: Record<string, string> = {
+  'monza e brianza': 'monza',
+};
+
+function slugifyProvince(province: string): string {
+  const lower = province.toLowerCase();
+  if (PROVINCE_SLUG_OVERRIDES[lower]) return PROVINCE_SLUG_OVERRIDES[lower];
+  return lower
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/['’]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function getProvinceSlug(location: string | undefined, geo: GeoResult | null): string | null {
+  if (!location) return null;
+  if (!getRegionForProvince(location)) return null;
+  const regionSlug = getRegionSlug(geo);
+  if (regionSlug === 'italia') return null;
+  return slugifyProvince(location);
+}
+
+function getSubitoOrder(sort: SortOption | undefined): string | null {
+  if (sort === 'price_asc') return 'priceasc';
+  if (sort === 'price_desc') return 'pricedesc';
+  return null;
+}
+
+function appendSubitoQuery(base: string, page: number, sort?: SortOption, extra?: Record<string, string>): string {
+  const params = new URLSearchParams(extra);
+  const order = getSubitoOrder(sort);
+  if (order) params.set('order', order);
+  if (page > 1) params.set('o', String(page));
+  const query = params.toString();
+  return query ? `${base}?${query}` : base;
+}
+
+export function buildSubitoUrl(make: string, model: string, geo: GeoResult | null, page: number, location?: string, sort?: SortOption): string {
   const makePath = getMakeSlug(make);
   const modelPath = getModelSlug(make, model, 'subito');
   const regionSlug = getRegionSlug(geo);
-  const base = `https://www.subito.it/annunci-${regionSlug}/vendita/auto/${encodeURIComponent(makePath)}/${encodeURIComponent(modelPath)}/`;
-  if (page > 1) return `${base}?o=${page}`;
-  return base;
+  const provinceSlug = getProvinceSlug(location, geo);
+  const locationPath = provinceSlug ? `${provinceSlug}/` : '';
+  const base = `https://www.subito.it/annunci-${regionSlug}/vendita/auto/${locationPath}${encodeURIComponent(makePath)}/${encodeURIComponent(modelPath)}/`;
+  return appendSubitoQuery(base, page, sort);
 }
 
-function buildFallbackUrl(make: string, model: string, geo: GeoResult | null, page: number): string {
+export function buildSubitoFallbackUrl(make: string, model: string, geo: GeoResult | null, page: number, location?: string, sort?: SortOption): string {
   const makePath = getMakeSlug(make);
   const regionSlug = getRegionSlug(geo);
-  const base = `https://www.subito.it/annunci-${regionSlug}/vendita/auto/${encodeURIComponent(makePath)}/`;
-  const params = new URLSearchParams({ q: model });
-  if (page > 1) params.set('o', String(page));
-  return `${base}?${params.toString()}`;
+  const provinceSlug = getProvinceSlug(location, geo);
+  const locationPath = provinceSlug ? `${provinceSlug}/` : '';
+  const base = `https://www.subito.it/annunci-${regionSlug}/vendita/auto/${locationPath}${encodeURIComponent(makePath)}/`;
+  return appendSubitoQuery(base, page, sort, { q: model });
 }
 
 function getFeatureValue(features: Record<string, unknown>, key: string): string | null {
@@ -143,30 +186,9 @@ const SUBITO_HEADERS = {
   'Upgrade-Insecure-Requests': '1',
 };
 
-type UrlBuilder = (make: string, model: string, geo: GeoResult | null, page: number) => string;
+type UrlBuilder = (make: string, model: string, geo: GeoResult | null, page: number, location?: string, sort?: SortOption) => string;
 
 const SUBITO_PAGE_CONCURRENCY = 3;
-
-async function runLimited<T, R>(
-  items: T[],
-  concurrency: number,
-  worker: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let nextIndex = 0;
-
-  async function runWorker(): Promise<void> {
-    while (nextIndex < items.length) {
-      const index = nextIndex;
-      nextIndex += 1;
-      results[index] = await worker(items[index]);
-    }
-  }
-
-  const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => runWorker());
-  await Promise.all(workers);
-  return results;
-}
 
 type SubitoPageResult = {
   page: number;
@@ -181,8 +203,10 @@ async function fetchSubitoPage(
   model: string,
   geo: GeoResult | null,
   page: number,
+  location?: string,
+  sort?: SortOption,
 ): Promise<SubitoPageResult> {
-  const url = urlBuilder(make, model, geo, page);
+  const url = urlBuilder(make, model, geo, page, location, sort);
   console.log(`[subito] Page ${page}: ${url}`);
 
   try {
@@ -233,11 +257,13 @@ async function fetchSubitoPages(
   geo: GeoResult | null,
   startPage: number,
   endPage: number,
+  location?: string,
+  sort?: SortOption,
 ): Promise<CarListing[]> {
   const listings: CarListing[] = [];
   const pages = Array.from({ length: endPage - startPage + 1 }, (_, index) => startPage + index);
   const pageResults = await runLimited(pages, SUBITO_PAGE_CONCURRENCY, (page) => (
-    fetchSubitoPage(urlBuilder, make, model, geo, page)
+    fetchSubitoPage(urlBuilder, make, model, geo, page, location, sort)
   ));
 
   for (const result of pageResults.sort((a, b) => a.page - b.page)) {
@@ -259,8 +285,10 @@ export async function scrapeSubito(
   geo: GeoResult | null = null,
   maxPages: number = 1,
   filters?: SearchFilters,
+  location?: string,
+  sort?: SortOption,
 ): Promise<CarListing[]> {
-  return scrapeSubitoPageRange(make, model, geo, 1, maxPages, filters);
+  return scrapeSubitoPageRange(make, model, geo, 1, maxPages, filters, location, sort);
 }
 
 export async function scrapeSubitoPageRange(
@@ -270,55 +298,30 @@ export async function scrapeSubitoPageRange(
   startPage: number = 1,
   endPage: number = 1,
   filters?: SearchFilters,
+  location?: string,
+  sort?: SortOption,
 ): Promise<CarListing[]> {
-  console.log(`[subito] Fetching pages ${startPage}-${endPage} (region: ${geo?.region ?? 'italia'})...`);
+  const provinceSlug = getProvinceSlug(location, geo);
+  console.log(`[subito] Fetching pages ${startPage}-${endPage} (region: ${geo?.region ?? 'italia'}${provinceSlug ? `, province: ${provinceSlug}` : ''})...`);
 
-  let allListings = await fetchSubitoPages(buildUrl, make, model, geo, startPage, endPage);
+  let allListings = await fetchSubitoPages(buildSubitoUrl, make, model, geo, startPage, endPage, location, sort);
 
   // Fallback: if model path returned nothing, retry with query-based search
-  if (allListings.length === 0) {
+  if (allListings.length === 0 && startPage === 1) {
     console.log(`[subito] Model path returned 0 results, retrying with ?q=${model} fallback...`);
-    const fallbackListings = await fetchSubitoPages(buildFallbackUrl, make, model, geo, startPage, endPage);
+    const fallbackListings = await fetchSubitoPages(buildSubitoFallbackUrl, make, model, geo, startPage, endPage, location, sort);
     allListings = fallbackListings.filter((l) => isListingRelevantToModel(make, model, l.title));
     console.log(`[subito] Fallback found ${fallbackListings.length} total, ${allListings.length} matching "${model}"`);
   }
 
-  // Apply post-scrape filters
-  let filtered = allListings;
-  if (filters) {
-    if (filters.yearFrom) {
-      filtered = filtered.filter((l) => l.year != null && l.year >= filters.yearFrom!);
-    }
-    if (filters.yearTo) {
-      filtered = filtered.filter((l) => l.year != null && l.year <= filters.yearTo!);
-    }
-    if (filters.kmMax) {
-      filtered = filtered.filter((l) => l.mileage != null && l.mileage <= filters.kmMax!);
-    }
-    if (filters.priceFrom) {
-      filtered = filtered.filter((l) => l.price != null && l.price >= filters.priceFrom!);
-    }
-    if (filters.priceTo) {
-      filtered = filtered.filter((l) => l.price != null && l.price <= filters.priceTo!);
-    }
-    if (filters.fuel) {
-      const fuelLower = filters.fuel.toLowerCase();
-      filtered = filtered.filter((l) => {
-        if (!l.fuel) return false;
-        const listingFuel = l.fuel.toLowerCase();
-        if (fuelLower === 'ibrida') return listingFuel.includes('ibrida') || listingFuel.includes('elettrica/');
-        return listingFuel.includes(fuelLower);
-      });
-    }
+  if (provinceSlug && allListings.length === 0 && startPage === 1) {
+    console.log(`[subito] Province path returned 0 matching results, falling back to regional search...`);
+    const regionalListings = await fetchSubitoPages(buildSubitoUrl, make, model, geo, startPage, endPage, undefined, sort);
+    allListings = regionalListings;
   }
 
-  // Deduplicate by URL
-  const seen = new Set<string>();
-  const unique = filtered.filter((l) => {
-    if (seen.has(l.originalUrl)) return false;
-    seen.add(l.originalUrl);
-    return true;
-  });
+  const filtered = filterListingsBySearchFilters(allListings, filters);
+  const unique = dedupeListingsByOriginalUrl(filtered);
 
   console.log(`[subito] Found ${unique.length} unique listings total`);
   return unique;

@@ -164,6 +164,14 @@ export function getProvincesForRegion(region: string): string[] {
   return r ? r.provinces : [];
 }
 
+export function getRegionForProvince(province: string): string | null {
+  const provinceLower = province.toLowerCase();
+  const match = ITALIAN_REGIONS.find((r) => (
+    r.provinces.some((p) => p.toLowerCase() === provinceLower)
+  ));
+  return match?.region ?? null;
+}
+
 /**
  * Check if a city string (as scraped, e.g. "Milano", "Bergamo")
  * belongs to the given region by matching against province names.

@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams, useRouter } from "next/navigation";
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Navbar from "@/components/Navbar";
 
@@ -19,70 +19,12 @@ import CarCard from "@/components/CarCard";
 import CarCardSkeleton from "@/components/CarCardSkeleton";
 import Pagination from "@/components/Pagination";
 import AlertBanner from "@/components/AlertBanner";
+import { API_BASE } from "@/config/api";
+import { SORT_OPTIONS } from "@/search/resultsOptions";
+import { createResultsViewKey, createSearchParams, type SearchRequestParams } from "@/search/resultsParams";
 import { appendCurrentUtmParams, getMarketingEventProps } from "@/utils/marketing";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-
-const SORT_OPTIONS = [
-  { value: "price_asc", label: "Prezzo crescente" },
-  { value: "price_desc", label: "Prezzo decrescente" },
-  { value: "year_desc", label: "Anno: più recenti" },
-  { value: "year_asc", label: "Anno: meno recenti" },
-  { value: "km_asc", label: "Km: meno km" },
-  { value: "km_desc", label: "Km: più km" },
-] as const;
-
-type CarListing = {
-  source: "autoscout" | "subito";
-  title: string;
-  price: number | null;
-  mileage?: number | null;
-  year?: number | null;
-  fuel?: string | null;
-  transmission?: string | null;
-  city?: string | null;
-  imageUrl?: string | null;
-  originalUrl: string;
-  dealScore?: number | null;
-  priceRating?: "great" | "good" | "fair" | "high" | "unknown";
-  estimatedMarketPrice?: number | null;
-  priceDeltaPercent?: number | null;
-  scoreConfidence?: "high" | "medium" | "low";
-  scoreReasons?: string[];
-};
-
-type SearchResponse = {
-  results: CarListing[];
-  total?: number | null;
-  page: number;
-  totalPages?: number | null;
-  warnings?: string[];
-  partial?: boolean;
-  hasNextPage?: boolean;
-  refreshAfterMs?: number;
-  snapshotId?: string;
-  snapshotVersion?: number;
-  latestSnapshotId?: string;
-  latestSnapshotVersion?: number;
-  hasUpdate?: boolean;
-};
-
-type SearchRequestParams = {
-  make: string;
-  model: string;
-  location: string;
-  locationType: string;
-  radius: string;
-  page: number;
-  sort: string;
-  yearFrom: string;
-  yearTo: string;
-  kmMax: string;
-  priceFrom: string;
-  priceTo: string;
-  fuel: string;
-  snapshotId: string;
-};
+import { scrollToTopSmooth } from "@/utils/scroll";
+import type { SearchResponse } from "@/types/search";
 
 function ResultsView({
   make,
@@ -106,7 +48,8 @@ function ResultsView({
   const [error, setError] = useState<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [msgIndex, setMsgIndex] = useState(0);
-  const [availableSnapshotId, setAvailableSnapshotId] = useState<string | null>(null);
+  const [pageTransitioning, setPageTransitioning] = useState(false);
+  const hasDataRef = useRef(false);
 
   // Rotate loading messages every 3s
   useEffect(() => {
@@ -120,29 +63,30 @@ function ResultsView({
   useEffect(() => {
     if (!make || !model) return;
 
-    const params = new URLSearchParams({
+    const currentParams = {
       make,
       model,
+      location,
+      locationType,
       radius,
-      page: String(page),
+      page,
       sort,
-    });
-    if (location) params.set("location", location);
-    if (locationType) params.set("locationType", locationType);
-    if (yearFrom) params.set("yearFrom", yearFrom);
-    if (yearTo) params.set("yearTo", yearTo);
-    if (kmMax) params.set("kmMax", kmMax);
-    if (priceFrom) params.set("priceFrom", priceFrom);
-    if (priceTo) params.set("priceTo", priceTo);
-    if (fuel) params.set("fuel", fuel);
-    if (snapshotId) params.set("snapshotId", snapshotId);
+      yearFrom,
+      yearTo,
+      kmMax,
+      priceFrom,
+      priceTo,
+      fuel,
+      snapshotId,
+    };
+    const params = createSearchParams(currentParams);
 
     const controller = new AbortController();
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
-    function fetchResults(pinnedSnapshotId?: string) {
+    function fetchResults(nextSnapshotId?: string, options: { silent?: boolean } = {}) {
       const requestParams = new URLSearchParams(params);
-      if (pinnedSnapshotId) requestParams.set("snapshotId", pinnedSnapshotId);
+      if (nextSnapshotId) requestParams.set("snapshotId", nextSnapshotId);
 
       fetch(`${API_BASE}/api/search?${requestParams.toString()}`, {
         signal: controller.signal,
@@ -155,27 +99,32 @@ function ResultsView({
           return res.json();
         })
         .then((json: SearchResponse) => {
-          if (pinnedSnapshotId && json.hasUpdate && json.latestSnapshotId && json.latestSnapshotId !== json.snapshotId) {
-            setAvailableSnapshotId(json.latestSnapshotId);
-            setLoading(false);
+          if (json.hasUpdate && json.latestSnapshotId && json.latestSnapshotId !== json.snapshotId) {
+            fetchResults(json.latestSnapshotId, { silent: true });
             return;
           }
 
           if (json.partial && json.results.length === 0) {
-            setLoading(true);
-            refreshTimer = setTimeout(() => fetchResults(json.snapshotId), json.refreshAfterMs ?? 2500);
+            if (!hasDataRef.current) setLoading(true);
+            refreshTimer = setTimeout(() => {
+              fetchResults(json.snapshotId, { silent: true });
+            }, json.refreshAfterMs ?? 2500);
             return;
           }
 
+          setError(null);
+          hasDataRef.current = true;
           setData(json);
           setLoading(false);
+          setPageTransitioning(false);
 
           if (json.partial) {
-            refreshTimer = setTimeout(() => fetchResults(json.snapshotId), json.refreshAfterMs ?? 2500);
-            return;
+            refreshTimer = setTimeout(() => {
+              fetchResults(json.snapshotId, { silent: true });
+            }, json.refreshAfterMs ?? 2500);
           }
 
-          if (typeof window !== "undefined" && window.umami) {
+          if (!options.silent && typeof window !== "undefined" && window.umami) {
             const eventProps: Record<string, string | number | boolean> = {
               make,
               model,
@@ -190,6 +139,7 @@ function ResultsView({
           if (err.name === "AbortError") return;
           setError(err.message || "Errore durante la ricerca");
           setLoading(false);
+          setPageTransitioning(false);
         });
     }
 
@@ -203,15 +153,22 @@ function ResultsView({
 
   function updateParams(overrides: Record<string, string>, options: { preserveSnapshot?: boolean } = {}) {
     const preserveSnapshot = options.preserveSnapshot ?? true;
-    const params = new URLSearchParams({ make, model, radius, page: "1", sort });
-    if (location) params.set("location", location);
-    if (locationType) params.set("locationType", locationType);
-    if (yearFrom) params.set("yearFrom", yearFrom);
-    if (yearTo) params.set("yearTo", yearTo);
-    if (kmMax) params.set("kmMax", kmMax);
-    if (priceFrom) params.set("priceFrom", priceFrom);
-    if (priceTo) params.set("priceTo", priceTo);
-    if (fuel) params.set("fuel", fuel);
+    const params = createSearchParams({
+      make,
+      model,
+      location,
+      locationType,
+      radius,
+      page,
+      sort,
+      yearFrom,
+      yearTo,
+      kmMax,
+      priceFrom,
+      priceTo,
+      fuel,
+      snapshotId: "",
+    }, "1");
     const currentSnapshotId = data?.snapshotId ?? snapshotId;
     if (preserveSnapshot && currentSnapshotId) params.set("snapshotId", currentSnapshotId);
     for (const [k, v] of Object.entries(overrides)) {
@@ -223,17 +180,13 @@ function ResultsView({
   }
 
   function handlePageChange(newPage: number) {
+    if (newPage !== page) setPageTransitioning(true);
     updateParams({ page: String(newPage) });
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    scrollToTopSmooth();
   }
 
   function handleSortChange(newSort: string) {
     updateParams({ sort: newSort, page: "1", snapshotId: "" }, { preserveSnapshot: false });
-  }
-
-  function handleApplyLatestSnapshot() {
-    if (!availableSnapshotId) return;
-    updateParams({ snapshotId: availableSnapshotId, page: String(page) }, { preserveSnapshot: false });
   }
 
   return (
@@ -311,7 +264,7 @@ function ResultsView({
         )}
 
         {/* Loading state */}
-        {loading && (
+        {loading && !data && (
           <div>
             <div className="flex flex-col items-center justify-center gap-4 mb-8 py-6">
               {/* Radar animation */}
@@ -434,15 +387,6 @@ function ResultsView({
                       : `vicino a ${location} · raggio ${radius} km`}
                   </p>
                 )}
-                {availableSnapshotId && (
-                  <button
-                    type="button"
-                    onClick={handleApplyLatestSnapshot}
-                    className="mt-2 inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors"
-                  >
-                    Risultati aggiornati disponibili
-                  </button>
-                )}
                 {/* Active filters chips */}
                 {(yearFrom || yearTo || kmMax || priceFrom || priceTo || fuel) && (
                   <div className="flex flex-wrap gap-1.5 mt-1.5">
@@ -507,29 +451,44 @@ function ResultsView({
               </div>
             </div>
 
-            {/* Card grid with staggered animation */}
             <motion.div
-              className="grid w-full min-w-0 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
-              initial="hidden"
-              animate="show"
-              variants={{
-                hidden: {},
-                show: { transition: { staggerChildren: 0.04 } },
+              aria-busy={pageTransitioning}
+              animate={{
+                opacity: pageTransitioning ? 0.58 : 1,
+                y: pageTransitioning ? 6 : 0,
               }}
+              transition={{ duration: 0.22, ease: "easeOut" }}
             >
-              {data.results.map((listing, i) => (
+              {/* Card grid with staggered animation */}
+              <AnimatePresence mode="wait">
                 <motion.div
-                  key={`${listing.source}-${listing.originalUrl}-${i}`}
-                  className="min-w-0 w-full"
+                  key={`${data.snapshotId ?? "results"}-${data.page}`}
+                  className="grid w-full min-w-0 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
+                  initial="hidden"
+                  animate="show"
+                  exit="exit"
                   variants={{
-                    hidden: { opacity: 0, y: 12 },
-                    show: { opacity: 1, y: 0 },
+                    hidden: { opacity: 0, y: 14 },
+                    show: { opacity: 1, y: 0, transition: { duration: 0.26, ease: "easeOut", staggerChildren: 0.035 } },
+                    exit: { opacity: 0, y: -10, transition: { duration: 0.16, ease: "easeIn" } },
                   }}
-                  transition={{ duration: 0.3, ease: "easeOut" }}
                 >
-                  <CarCard listing={listing} />
+                  {data.results.map((listing, i) => (
+                    <motion.div
+                      key={`${listing.source}-${listing.originalUrl}-${i}`}
+                      className="min-w-0 w-full"
+                      variants={{
+                        hidden: { opacity: 0, y: 12 },
+                        show: { opacity: 1, y: 0 },
+                        exit: { opacity: 0, y: -8 },
+                      }}
+                      transition={{ duration: 0.26, ease: "easeOut" }}
+                    >
+                      <CarCard listing={listing} />
+                    </motion.div>
+                  ))}
                 </motion.div>
-              ))}
+              </AnimatePresence>
             </motion.div>
 
             {(data.totalPages != null || data.hasNextPage || data.page > 1) && (
@@ -567,22 +526,7 @@ function ResultsContent() {
     snapshotId: searchParams.get("snapshotId") ?? "",
   };
 
-  const requestKey = [
-    params.make,
-    params.model,
-    params.location,
-    params.locationType,
-    params.radius,
-    params.page,
-    params.sort,
-    params.yearFrom,
-    params.yearTo,
-    params.kmMax,
-    params.priceFrom,
-    params.priceTo,
-    params.fuel,
-    params.snapshotId,
-  ].join("|");
+  const requestKey = createResultsViewKey(params);
 
   return <ResultsView key={requestKey} {...params} />;
 }

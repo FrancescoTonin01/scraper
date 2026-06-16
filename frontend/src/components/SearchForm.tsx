@@ -4,55 +4,17 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Combobox from "./Combobox";
+import FormSelect from "./FormSelect";
 import { getMakeNames, getModelsForMake, getGroupedModelsForMake } from "@/data/carMakesModels";
 import { getLocationOptions, extractLocationName, isRegion, resolveLocationInput } from "@/data/italianLocations";
 import { appendCurrentUtmParams } from "@/utils/marketing";
-
-const RADIUS_OPTIONS = [25, 50, 100, 200, 500];
-
-const YEAR_OPTIONS = (() => {
-  const current = new Date().getFullYear();
-  const years: number[] = [];
-  for (let y = current + 1; y >= 2000; y--) years.push(y);
-  return years;
-})();
-
-const KM_OPTIONS = [
-  { value: "", label: "Qualsiasi" },
-  { value: "10000", label: "10.000 km" },
-  { value: "25000", label: "25.000 km" },
-  { value: "50000", label: "50.000 km" },
-  { value: "75000", label: "75.000 km" },
-  { value: "100000", label: "100.000 km" },
-  { value: "150000", label: "150.000 km" },
-  { value: "200000", label: "200.000 km" },
-];
-
-const FUEL_OPTIONS = [
-  { value: "", label: "Qualsiasi" },
-  { value: "benzina", label: "Benzina" },
-  { value: "diesel", label: "Diesel" },
-  { value: "elettrica", label: "Elettrica" },
-  { value: "gpl", label: "GPL" },
-  { value: "metano", label: "Metano" },
-  { value: "ibrida", label: "Ibrida" },
-];
+import { FUEL_OPTIONS, KM_OPTIONS, RADIUS_OPTIONS, YEAR_OPTIONS } from "@/search/formOptions";
+import type { SearchFormInitialValues } from "@/types/searchForm";
 
 export default function SearchForm({
   initialValues,
 }: {
-  initialValues?: {
-    make?: string;
-    model?: string;
-    location?: string;
-    radius?: string;
-    yearFrom?: string;
-    yearTo?: string;
-    kmMax?: string;
-    priceFrom?: string;
-    priceTo?: string;
-    fuel?: string;
-  };
+  initialValues?: SearchFormInitialValues;
 }) {
   const router = useRouter();
   const [make, setMake] = useState(initialValues?.make ?? "");
@@ -213,38 +175,18 @@ export default function SearchForm({
           />
 
           {!isLocationRegion && (
-          <div className="min-w-0">
-            <label
-              htmlFor="radius"
-              className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5"
-            >
-              Raggio
-            </label>
-            <div className="relative">
-              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+            <FormSelect
+              id="radius"
+              label="Raggio"
+              value={radius}
+              onChange={setRadius}
+              options={RADIUS_OPTIONS.map((r) => ({ value: r, label: `${r} km` }))}
+              icon={
                 <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
                 </svg>
-              </div>
-              <select
-                id="radius"
-                value={radius}
-                onChange={(e) => setRadius(e.target.value)}
-                className="w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-4 py-2.5 text-sm text-slate-900 appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white transition-all"
-              >
-                {RADIUS_OPTIONS.map((r) => (
-                  <option key={r} value={r}>
-                    {r} km
-                  </option>
-                ))}
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
-                <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </div>
-            </div>
-          </div>
+              }
+            />
           )}
         </div>
         <button
@@ -287,68 +229,32 @@ export default function SearchForm({
               <div className="border-t border-slate-100 pt-4 pb-1 space-y-3">
                 {/* Year range */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-0">
-                  <div className="min-w-0">
-                    <label
-                      htmlFor="yearFrom"
-                      className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5"
-                    >
-                      Anno da
-                    </label>
-                    <div className="relative">
-                      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                  <FormSelect
+                    id="yearFrom"
+                    label="Anno da"
+                    value={yearFrom}
+                    onChange={setYearFrom}
+                    options={[{ value: "", label: "Qualsiasi" }, ...YEAR_OPTIONS.map((y) => ({ value: y, label: y }))]}
+                    includeInsetFocusRing
+                    icon={
                         <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
-                      </div>
-                      <select
-                        id="yearFrom"
-                        value={yearFrom}
-                        onChange={(e) => setYearFrom(e.target.value)}
-                        className="w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-4 py-2.5 text-sm text-slate-900 appearance-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 focus:border-transparent focus:bg-white transition-all"
-                      >
-                        <option value="">Qualsiasi</option>
-                        {YEAR_OPTIONS.map((y) => (
-                          <option key={y} value={y}>{y}</option>
-                        ))}
-                      </select>
-                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
-                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="min-w-0">
-                    <label
-                      htmlFor="yearTo"
-                      className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5"
-                    >
-                      Anno a
-                    </label>
-                    <div className="relative">
-                      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                    }
+                  />
+                  <FormSelect
+                    id="yearTo"
+                    label="Anno a"
+                    value={yearTo}
+                    onChange={setYearTo}
+                    options={[{ value: "", label: "Qualsiasi" }, ...YEAR_OPTIONS.map((y) => ({ value: y, label: y }))]}
+                    includeInsetFocusRing
+                    icon={
                         <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
-                      </div>
-                      <select
-                        id="yearTo"
-                        value={yearTo}
-                        onChange={(e) => setYearTo(e.target.value)}
-                        className="w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-4 py-2.5 text-sm text-slate-900 appearance-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 focus:border-transparent focus:bg-white transition-all"
-                      >
-                        <option value="">Qualsiasi</option>
-                        {YEAR_OPTIONS.map((y) => (
-                          <option key={y} value={y}>{y}</option>
-                        ))}
-                      </select>
-                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
-                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </div>
-                    </div>
-                  </div>
+                    }
+                  />
                 </div>
 
                 {/* Price range */}
@@ -411,67 +317,33 @@ export default function SearchForm({
 
                 {/* Km max + Fuel */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-0">
-                  <div className="min-w-0">
-                    <label
-                      htmlFor="kmMax"
-                      className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5"
-                    >
-                      Km max
-                    </label>
-                    <div className="relative">
-                      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                  <FormSelect
+                    id="kmMax"
+                    label="Km max"
+                    value={kmMax}
+                    onChange={setKmMax}
+                    options={KM_OPTIONS}
+                    includeInsetFocusRing
+                    icon={
                         <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
                         </svg>
-                      </div>
-                      <select
-                        id="kmMax"
-                        value={kmMax}
-                        onChange={(e) => setKmMax(e.target.value)}
-                        className="w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-4 py-2.5 text-sm text-slate-900 appearance-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 focus:border-transparent focus:bg-white transition-all"
-                      >
-                        {KM_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
-                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="min-w-0">
-                    <label
-                      htmlFor="fuel"
-                      className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5"
-                    >
-                      Alimentazione
-                    </label>
-                    <div className="relative">
-                      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                    }
+                  />
+                  <FormSelect
+                    id="fuel"
+                    label="Alimentazione"
+                    value={fuel}
+                    onChange={setFuel}
+                    options={FUEL_OPTIONS}
+                    includeInsetFocusRing
+                    icon={
                         <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" />
                         </svg>
-                      </div>
-                      <select
-                        id="fuel"
-                        value={fuel}
-                        onChange={(e) => setFuel(e.target.value)}
-                        className="w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-4 py-2.5 text-sm text-slate-900 appearance-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 focus:border-transparent focus:bg-white transition-all"
-                      >
-                        {FUEL_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
-                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </div>
-                    </div>
-                  </div>
+                    }
+                  />
                 </div>
               </div>
             </motion.div>

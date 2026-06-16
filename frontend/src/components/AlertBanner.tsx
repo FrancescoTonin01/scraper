@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { API_BASE } from "@/config/api";
+import { postJson } from "@/utils/http";
 import { getMarketingEventProps } from "@/utils/marketing";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 type AlertBannerProps = {
   make: string;
@@ -18,6 +18,9 @@ type AlertBannerProps = {
 };
 
 type SubmitState = "idle" | "submitting" | "success" | "error";
+type AlertResponse = {
+  message: string;
+};
 
 export default function AlertBanner({
   make,
@@ -54,10 +57,9 @@ export default function AlertBanner({
     setState("submitting");
 
     try {
-      const res = await fetch(`${API_BASE}/api/alerts`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const data = await postJson<AlertResponse>(
+        `${API_BASE}/api/alerts`,
+        {
           email: email.trim(),
           make,
           model,
@@ -67,11 +69,9 @@ export default function AlertBanner({
           ...(yearTo && { yearTo }),
           ...(kmMax && { kmMax }),
           ...(fuel && { fuel }),
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Errore imprevisto");
+        },
+        "Errore imprevisto",
+      );
 
       setState("success");
       setMessage(data.message);

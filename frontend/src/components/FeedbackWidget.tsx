@@ -2,10 +2,13 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+import { API_BASE } from "@/config/api";
+import { postJson } from "@/utils/http";
 
 type SubmitState = "idle" | "submitting" | "success" | "error";
+type FeedbackResponse = {
+  message: string;
+};
 
 export default function FeedbackWidget() {
   const [open, setOpen] = useState(false);
@@ -22,18 +25,15 @@ export default function FeedbackWidget() {
     setState("submitting");
 
     try {
-      const res = await fetch(`${API_BASE}/api/feedback`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const data = await postJson<FeedbackResponse>(
+        `${API_BASE}/api/feedback`,
+        {
           rating,
           ...(message.trim() && { message: message.trim() }),
           page: typeof window !== "undefined" ? window.location.pathname + window.location.search : undefined,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Errore");
+        },
+        "Errore",
+      );
 
       setState("success");
       setResponseMsg(data.message);

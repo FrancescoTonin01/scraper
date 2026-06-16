@@ -41,6 +41,7 @@ type RunResult = {
   warnings?: string[];
   partial?: boolean;
   firstPartial?: boolean;
+  firstDebug?: DebugPayload;
   debug?: DebugPayload;
   completeClientMs?: number;
   snapshotVersion?: number;
@@ -135,6 +136,7 @@ async function runBenchmark(run: number): Promise<RunResult> {
         warnings: latest.warnings ?? body.warnings,
         partial: latest.partial,
         firstPartial: body.partial,
+        firstDebug: body.debug,
         debug: latest.debug ?? body.debug,
         snapshotVersion: latest.snapshotVersion ?? body.snapshotVersion,
         latestSnapshotVersion: latest.latestSnapshotVersion ?? body.latestSnapshotVersion,
@@ -153,6 +155,7 @@ async function runBenchmark(run: number): Promise<RunResult> {
       warnings: body.warnings,
       partial: body.partial,
       firstPartial: body.partial,
+      firstDebug: body.debug,
       debug: body.debug,
       snapshotVersion: body.snapshotVersion,
       latestSnapshotVersion: body.latestSnapshotVersion,
@@ -180,12 +183,16 @@ async function main(): Promise<void> {
     results.push(result);
 
     const debug = result.debug;
+    const firstDebug = result.firstDebug;
+    const firstTiming = firstDebug
+      ? `firstServer=${firstDebug.timingsMs.total}ms firstGeocode=${firstDebug.timingsMs.geocode}ms firstRegionTargets=${firstDebug.timingsMs.regionTargets}ms firstAutoscout=${firstDebug.timingsMs.autoscout}ms firstSubito=${firstDebug.timingsMs.subito}ms firstPost=${firstDebug.timingsMs.postProcess}ms firstCache=${firstDebug.cache} firstSources=${firstDebug.sourceCounts.autoscout}/${firstDebug.sourceCounts.subito}/${firstDebug.sourceCounts.combined}`
+      : 'firstServer=n/a';
     const timing = debug
       ? `server=${debug.timingsMs.total}ms geocode=${debug.timingsMs.geocode}ms regionTargets=${debug.timingsMs.regionTargets}ms autoscout=${debug.timingsMs.autoscout}ms subito=${debug.timingsMs.subito}ms post=${debug.timingsMs.postProcess}ms cache=${debug.cache} sources=${debug.sourceCounts.autoscout}/${debug.sourceCounts.subito}/${debug.sourceCounts.combined}`
       : 'server=n/a';
 
     console.log(
-      `Run ${result.run}: status=${result.status} ok=${result.ok} client=${round(result.clientMs)}ms${result.completeClientMs ? ` complete=${round(result.completeClientMs)}ms` : ''} firstTotal=${result.firstTotal ?? result.total ?? 'n/a'} firstPartial=${result.firstPartial ? 'true' : 'false'} total=${result.total ?? 'n/a'} partial=${result.partial ? 'true' : 'false'} snapshot=${result.snapshotVersion ?? 'n/a'} latest=${result.latestSnapshotVersion ?? 'n/a'} update=${result.hasUpdate ? 'true' : 'false'} ${timing}${result.error ? ` error=${result.error}` : ''}`,
+      `Run ${result.run}: status=${result.status} ok=${result.ok} client=${round(result.clientMs)}ms${result.completeClientMs ? ` complete=${round(result.completeClientMs)}ms` : ''} firstTotal=${result.firstTotal ?? result.total ?? 'n/a'} firstPartial=${result.firstPartial ? 'true' : 'false'} total=${result.total ?? 'n/a'} partial=${result.partial ? 'true' : 'false'} snapshot=${result.snapshotVersion ?? 'n/a'} latest=${result.latestSnapshotVersion ?? 'n/a'} update=${result.hasUpdate ? 'true' : 'false'} ${firstTiming} ${timing}${result.error ? ` error=${result.error}` : ''}`,
     );
   }
 
@@ -194,6 +201,7 @@ async function main(): Promise<void> {
   console.log('Summary');
   console.log(summarize('client', successful.map((result) => result.clientMs)));
   console.log(summarize('complete', successful.flatMap((result) => result.completeClientMs ? [result.completeClientMs] : [])));
+  console.log(summarize('firstServer', successful.flatMap((result) => result.firstDebug ? [result.firstDebug.timingsMs.total] : [])));
   console.log(summarize('server', successful.flatMap((result) => result.debug ? [result.debug.timingsMs.total] : [])));
   console.log(summarize('autoscout', successful.flatMap((result) => result.debug ? [result.debug.timingsMs.autoscout] : [])));
   console.log(summarize('subito', successful.flatMap((result) => result.debug ? [result.debug.timingsMs.subito] : [])));
