@@ -2,6 +2,8 @@ import type { CarListing, GeoResult, SearchFilters } from '../types.js';
 import { getMakeSlug, getModelSlug, isListingRelevantToModel } from '../data/modelSlugs.js';
 import { getRegionForProvince } from '../data/locations.js';
 import type { SortOption } from '../searchResults.js';
+import { runLimited } from '../utils/concurrency.js';
+import { dedupeListingsByOriginalUrl, filterListingsBySearchFilters } from '../utils/listings.js';
 
 // Map Italian region names (from Nominatim) to Subito URL slugs
 const REGION_SLUGS: Record<string, string> = {
@@ -188,27 +190,6 @@ type UrlBuilder = (make: string, model: string, geo: GeoResult | null, page: num
 
 const SUBITO_PAGE_CONCURRENCY = 3;
 
-async function runLimited<T, R>(
-  items: T[],
-  concurrency: number,
-  worker: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let nextIndex = 0;
-
-  async function runWorker(): Promise<void> {
-    while (nextIndex < items.length) {
-      const index = nextIndex;
-      nextIndex += 1;
-      results[index] = await worker(items[index]);
-    }
-  }
-
-  const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => runWorker());
-  await Promise.all(workers);
-  return results;
-}
-
 type SubitoPageResult = {
   page: number;
   listings: CarListing[];
@@ -339,42 +320,8 @@ export async function scrapeSubitoPageRange(
     allListings = regionalListings;
   }
 
-  // Apply post-scrape filters
-  let filtered = allListings;
-  if (filters) {
-    if (filters.yearFrom) {
-      filtered = filtered.filter((l) => l.year != null && l.year >= filters.yearFrom!);
-    }
-    if (filters.yearTo) {
-      filtered = filtered.filter((l) => l.year != null && l.year <= filters.yearTo!);
-    }
-    if (filters.kmMax) {
-      filtered = filtered.filter((l) => l.mileage != null && l.mileage <= filters.kmMax!);
-    }
-    if (filters.priceFrom) {
-      filtered = filtered.filter((l) => l.price != null && l.price >= filters.priceFrom!);
-    }
-    if (filters.priceTo) {
-      filtered = filtered.filter((l) => l.price != null && l.price <= filters.priceTo!);
-    }
-    if (filters.fuel) {
-      const fuelLower = filters.fuel.toLowerCase();
-      filtered = filtered.filter((l) => {
-        if (!l.fuel) return false;
-        const listingFuel = l.fuel.toLowerCase();
-        if (fuelLower === 'ibrida') return listingFuel.includes('ibrida') || listingFuel.includes('elettrica/');
-        return listingFuel.includes(fuelLower);
-      });
-    }
-  }
-
-  // Deduplicate by URL
-  const seen = new Set<string>();
-  const unique = filtered.filter((l) => {
-    if (seen.has(l.originalUrl)) return false;
-    seen.add(l.originalUrl);
-    return true;
-  });
+  const filtered = filterListingsBySearchFilters(allListings, filters);
+  const unique = dedupeListingsByOriginalUrl(filtered);
 
   console.log(`[subito] Found ${unique.length} unique listings total`);
   return unique;

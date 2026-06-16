@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { filterOptionsByMatchQuality } from "@/utils/options";
 
 type OptionGroup = {
   label: string;
@@ -40,24 +41,7 @@ export default function Combobox({
   const wrapperRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
-  const filtered = (() => {
-    if (!value) return options;
-    const v = value.toLowerCase();
-    // Bucket by match quality: exact > startsWith > word-boundary > includes
-    const exact: string[] = [];
-    const startsWith: string[] = [];
-    const wordBoundary: string[] = [];
-    const includes: string[] = [];
-    const wordRe = new RegExp(`\\b${v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i');
-    for (const o of options) {
-      const oLower = o.toLowerCase();
-      if (oLower === v) exact.push(o);
-      else if (oLower.startsWith(v)) startsWith.push(o);
-      else if (wordRe.test(o)) wordBoundary.push(o);
-      else if (oLower.includes(v)) includes.push(o);
-    }
-    return [...exact, ...startsWith, ...wordBoundary, ...includes];
-  })();
+  const filtered = filterOptionsByMatchQuality(options, value);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {

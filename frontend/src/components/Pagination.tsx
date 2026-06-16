@@ -1,3 +1,5 @@
+import { getPaginationItems } from "@/utils/pagination";
+
 export default function Pagination({
   page,
   totalPages,
@@ -13,24 +15,7 @@ export default function Pagination({
   if (!unknownTotal && totalPages <= 1) return null;
   if (unknownTotal && page <= 1 && !hasNextPage) return null;
 
-  const pages: (number | "...")[] = [];
-  const delta = 2;
-
-  if (unknownTotal) {
-    pages.push(page);
-  } else {
-    for (let i = 1; i <= totalPages; i++) {
-      if (
-        i === 1 ||
-        i === totalPages ||
-        (i >= page - delta && i <= page + delta)
-      ) {
-        pages.push(i);
-      } else if (pages[pages.length - 1] !== "...") {
-        pages.push("...");
-      }
-    }
-  }
+  const pages = getPaginationItems(page, totalPages);
 
   return (
     <nav className="flex flex-wrap items-center justify-center gap-1.5 mt-10 mb-4">

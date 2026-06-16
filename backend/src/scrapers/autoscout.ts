@@ -2,6 +2,8 @@ import { chromium, type Browser, type BrowserContext, type Page } from 'playwrig
 import type { CarListing, GeoResult, SearchFilters } from '../types.js';
 import { getMakeSlug, getModelSlug } from '../data/modelSlugs.js';
 import type { SortOption } from '../searchResults.js';
+import { runLimited } from '../utils/concurrency.js';
+import { dedupeListingsByOriginalUrl } from '../utils/listings.js';
 
 // Map fuel filter values to AutoScout24 URL parameter codes
 const FUEL_MAP: Record<string, string> = {
@@ -36,27 +38,6 @@ async function getSharedBrowser(): Promise<Browser> {
 async function createSearchContext(): Promise<BrowserContext> {
   const browser = await getSharedBrowser();
   return browser.newContext(AUTOSCOUT_CONTEXT_OPTIONS);
-}
-
-async function runLimited<T, R>(
-  items: T[],
-  concurrency: number,
-  worker: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let nextIndex = 0;
-
-  async function runWorker(): Promise<void> {
-    while (nextIndex < items.length) {
-      const index = nextIndex;
-      nextIndex += 1;
-      results[index] = await worker(items[index]);
-    }
-  }
-
-  const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => runWorker());
-  await Promise.all(workers);
-  return results;
 }
 
 async function resetSharedBrowser(): Promise<void> {
@@ -519,12 +500,7 @@ export async function scrapeAutoScoutTargetsPageRange(
       allListings.push(...result.listings);
     }
 
-    const seen = new Set<string>();
-    const unique = allListings.filter((listing) => {
-      if (seen.has(listing.originalUrl)) return false;
-      seen.add(listing.originalUrl);
-      return true;
-    });
+    const unique = dedupeListingsByOriginalUrl(allListings);
 
     console.log(`[autoscout] Found ${unique.length} unique listings total`);
     return unique;

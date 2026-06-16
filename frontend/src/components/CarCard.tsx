@@ -1,24 +1,6 @@
 import SourceBadge from "./SourceBadge";
 import { getMarketingEventProps } from "@/utils/marketing";
-
-type CarListing = {
-  source: "autoscout" | "subito";
-  title: string;
-  price: number | null;
-  mileage?: number | null;
-  year?: number | null;
-  fuel?: string | null;
-  transmission?: string | null;
-  city?: string | null;
-  imageUrl?: string | null;
-  originalUrl: string;
-  dealScore?: number | null;
-  priceRating?: "great" | "good" | "fair" | "high" | "unknown";
-  estimatedMarketPrice?: number | null;
-  priceDeltaPercent?: number | null;
-  scoreConfidence?: "high" | "medium" | "low";
-  scoreReasons?: string[];
-};
+import type { CarListing } from "@/types/search";
 
 function formatPrice(price: number | null): string {
   if (price === null) return "Prezzo N/D";
